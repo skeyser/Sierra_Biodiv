@@ -4,6 +4,54 @@ output: html_document
 date: "2024-09-26"
 ---
 
-# 
+# Package Loading
+```{r message = FALSE}
+library(here)
+library(dplyr)
 
+```
+
+# Thresholds file exploration:
+
+## Variable types
+1. Species {character} = Species Common Name
+2. keep {numeric} = Binary indicator variable
+3. BirdNET_code {numeric} = Species' code names from BirdNET
+4. intercept.c {numeric}
+5. beta.c {numeric}
+6. intercept.r {numeric}
+7. beta.r {numeric}
+8. cutoff85.r {numeric}
+9. cutoff90.r {numeric}
+10. cutoff95.r {numeric}
+11. cutoff975.r {numeric}
+12. cutoff99.r {numeric}
+13. cutoff90.r_conf {numeric}
+14. cutoff95.r_conf {numeric}
+15. cutoff99.r_conf {numeric}
+
+"r" indicates raw/logit scale values and "c|conf" indicates in the probability scale for confidence scores (confidence is not a probability itself). Cutoffs are the value where all data below this value is considered a non-detection (in an occupancy modelling framework this is okay given the structure accounts for false negatives). All values greater than the cut-off is left as the score. False positives are what we are trying to minimize since they are not easily integrated into an occupancy modelling framework.
+
+```{r}
+## Read thresholds in
+thresh <- readr::read_csv(here("Data/Thresholds_2021_20230309.csv"))
+glimpse(thresh)
+
+## DF Dimensions
+dim(thresh)
+
+## How many species
+length(unique(thresh$species))
+print(thresh$species)
+
+## Names of the columns
+colnames(thresh)
+
+## Breakdown for "keep"
+table(thresh$keep)
+
+## Overall summarization
+summary(thresh)
+
+```
 
