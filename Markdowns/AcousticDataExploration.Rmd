@@ -55,3 +55,36 @@ summary(thresh)
 
 ```
 
+## ARU and Species Detection Data
+The following data files correspond to Step3 in the BirdNET
+
+```{r}
+## Load in an example species file
+atfl <- readr::read_csv(here("./Data/Detections_By_Species/2021/Ash-throated_Flycatcher_Gt0.563_2021_max_score_summary.csv"))
+
+## Structure of the dataframe
+str(atfl)
+
+## Replace the "." notation with a "0"
+atfl[atfl == "."] <- "0"
+
+## Make all characters numeric
+atfl <- atfl |> 
+  mutate(across(2:last_col(), ~as.numeric(.))) |> #characters to numeric 
+  mutate(across(2:last_col(), ~ifelse(. > 0, 1, .))) #make binary
+
+## How many detections of Ash-throated Flycatcher across Sierra
+paste("Ash-throated Flycatcher detections:", sum(atfl[2:ncol(atfl)]))
+
+## Total Survey records
+(ncol(atfl)-1) * nrow(atfl)
+
+## % Detections
+atfl_pct_det <- sum(atfl[2:ncol(atfl)]) / ((ncol(atfl)-1) * nrow(atfl)) * 100
+
+## Percentage of surveys with ATFL
+paste("Percent of surveys with ATFL confirmed:", round(atfl_pct_det, digits = 2), "%")
+
+```
+
+
