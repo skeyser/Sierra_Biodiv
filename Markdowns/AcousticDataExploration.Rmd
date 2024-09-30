@@ -87,4 +87,11 @@ paste("Percent of surveys with ATFL confirmed:", round(atfl_pct_det, digits = 2)
 
 ```
 
+## Linking ARU data to spatial data
+We now have the ARU data formatted into an ARU x Date matrix with cells corresponding to the BirdNET confidence scores (thresholded to the maximum detection score per day >= the estimated BirdNET thresholds). The cells now represent naive occupancy for the species of interest. Next, we will want to assign the ARUs a spatial location using spatial references for each ARU.
+
+WIP: Checking with Jay to get access to spatial data.
+
+
+
 
