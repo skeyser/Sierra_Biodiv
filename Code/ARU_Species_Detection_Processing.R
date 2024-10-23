@@ -34,6 +34,7 @@ library(ggplot2)
 library(stringr)
 library(CAbioacoustics)
 library(sf)
+library(mapview)
 
 ## -------------------------------------------------------------
 
@@ -99,46 +100,46 @@ summary(thresh)
 ##
 ## *************************************************************
 
-## Load in an example species file
-atfl <- readr::read_csv(here("./Data/Detections_By_Species/2021/Ash-throated_Flycatcher_Gt0.563_2021_max_score_summary.csv"))
-atfl <- readr::read_csv(here("./Data/Detections_By_Species/2022/Ash-throated_Flycatcher_Gt0.563_2022_max_score_summary.csv"))
-
-## Structure of the dataframe
-str(atfl)
-
-## Replace the "." notation with a "0"
-atfl[atfl == "."] <- "0"
-
-## Make all characters numeric
-atfl <- atfl |> 
-  mutate(across(2:last_col(), ~as.numeric(.))) #characters to numeric 
-
-## What is the max value in the df
-min.atfl <- atfl[, 2:ncol(atfl)]
-min.val <- min(min.atfl[min.atfl > 0])
-
-## Minimum for the threshold
-th <- thresh[thresh$species == "Ash-throated Flycatcher",]$cutoff90.r_conf
-
-## Make the detections binary
-atfl <- atfl |> 
-  mutate(across(2:last_col(), ~ifelse(. > 0, 1, 0))) #make binary
-  
-## What is the total number of detections at each site
-siteDet <- rowSums(atfl[,2:ncol(atfl)])
-DetSites <- which(siteDet >= 2)
-
-## How many detections of Ash-throated Flycatcher across Sierra
-paste("Ash-throated Flycatcher detections:", sum(atfl[2:ncol(atfl)]))
-
-## Total Survey records
-(ncol(atfl)-1) * nrow(atfl)
-
-## % Detections
-atfl_pct_det <- sum(atfl[2:ncol(atfl)]) / ((ncol(atfl)-1) * nrow(atfl)) * 100
-
-## Percentage of surveys with ATFL
-paste("Percent of surveys with ATFL confirmed:", round(atfl_pct_det, digits = 2), "%")
+# ## Load in an example species file
+# atfl <- readr::read_csv(here("./Data/Detections_By_Species/2021/Ash-throated_Flycatcher_Gt0.563_2021_max_score_summary.csv"))
+# atfl <- readr::read_csv(here("./Data/Detections_By_Species/2022/Ash-throated_Flycatcher_Gt0.563_2022_max_score_summary.csv"))
+# 
+# ## Structure of the dataframe
+# str(atfl)
+# 
+# ## Replace the "." notation with a "0"
+# atfl[atfl == "."] <- "0"
+# 
+# ## Make all characters numeric
+# atfl <- atfl |> 
+#   mutate(across(2:last_col(), ~as.numeric(.))) #characters to numeric 
+# 
+# ## What is the max value in the df
+# min.atfl <- atfl[, 2:ncol(atfl)]
+# min.val <- min(min.atfl[min.atfl > 0])
+# 
+# ## Minimum for the threshold
+# th <- thresh[thresh$species == "Ash-throated Flycatcher",]$cutoff90.r_conf
+# 
+# ## Make the detections binary
+# atfl <- atfl |> 
+#   mutate(across(2:last_col(), ~ifelse(. > 0, 1, 0))) #make binary
+#   
+# ## What is the total number of detections at each site
+# siteDet <- rowSums(atfl[,2:ncol(atfl)])
+# DetSites <- which(siteDet >= 2)
+# 
+# ## How many detections of Ash-throated Flycatcher across Sierra
+# paste("Ash-throated Flycatcher detections:", sum(atfl[2:ncol(atfl)]))
+# 
+# ## Total Survey records
+# (ncol(atfl)-1) * nrow(atfl)
+# 
+# ## % Detections
+# atfl_pct_det <- sum(atfl[2:ncol(atfl)]) / ((ncol(atfl)-1) * nrow(atfl)) * 100
+# 
+# ## Percentage of surveys with ATFL
+# paste("Percent of surveys with ATFL confirmed:", round(atfl_pct_det, digits = 2), "%")
 
 ## -------------------------------------------------------------
 ##
@@ -336,49 +337,12 @@ for(i in 1:length(sp.det.files)){
 }
 
 names(sp.det.list)
-## Test the function
-# atfl.test99 <- ac_det_filter(d = atfl,
-#                           d_thresh = thresh,
-#                           thresh_scale = "Conf",
-#                           thresh_cut = "99",
-#                           time_format = "ymd",
-#                           species = "Ash-throated Flycatcher",
-#                           no_dets = 2,
-#                           binary = T)
-# 
-# atfl.test90 <- ac_det_filter(d = atfl,
-#                           d_thresh = thresh,
-#                           thresh_scale = "Conf",
-#                           thresh_cut = "90",
-#                           time_format = "ymd",
-#                           species = "Ash-throated Flycatcher",
-#                           no_dets = 2,
-#                           binary = T)
-# 
-# atfl.test90.4dets <- ac_det_filter(d = atfl,
-#                           d_thresh = thresh,
-#                           thresh_scale = "Conf",
-#                           thresh_cut = "90",
-#                           time_format = "ymd",
-#                           species = "Ash-throated Flycatcher",
-#                           no_dets = 4,
-#                           binary = T)
-
 
 ## # of detections
 lapply(sp.det.list, function(x) paste(names(x), "detections:", sum(x[,2:ncol(x)])))
 paste(names(sp.det.list[1]), "detections:", sum(sp.det.list[[1]][2:ncol(sp.det.list[[1]])]))
 paste(names(sp.det.list[2]), "detections:", sum(sp.det.list[[2]][2:ncol(sp.det.list[[2]])]))
 paste(names(sp.det.list[3]), "detections:", sum(sp.det.list[[3]][2:ncol(sp.det.list[[3]])]))
-
-## Change in detections
-paste("Percent Change in Ash-throated Flycatcher detections from filtering:", ((sum(atfl.test90[2:ncol(atfl.test90)]) - sum(atfl.test99[2:ncol(atfl.test99)])) / sum(atfl.test99[2:ncol(atfl.test99)]) * 100))
-
-## % Detections
-atfl_pct_det <- sum(atfl[2:ncol(atfl)]) / ((ncol(atfl)-1) * nrow(atfl)) * 100
-
-## Percentage of surveys with ATFL
-paste("Percent of surveys with ATFL confirmed:", round(atfl_pct_det, digits = 2), "%")
 
 ## Sum the detections in species richness DF
 cols_to_sum <- 2:ncol(sp.det.list[[1]])
@@ -423,6 +387,7 @@ print(seasonal_df)
 
 ## `seasonal_df` now captures the naive occupancy for each species
 ## across the Sierra ARUs and can be used as a site x species matrix
+colnames(seasonal_df)
 
 ## -------------------------------------------------------------
 ##
@@ -451,7 +416,7 @@ syear <- 2021
 eyear <- 2023
 
 ## SF needs to be loaded to execute
-ownership <- c('usfs')
+ownership <- c('any')
 cell_list <- cb_cells_by_ownership(ownership)
 
 ## Study type
@@ -497,9 +462,9 @@ hexes_map + deployments_map
 
 
 ## Link Species Detections with ARU locations - From Jay's DB
-glimpse(atfl)
-head(atfl$Cell_Unit)
-length(unique(atfl$Cell_Unit))
+glimpse(seasonal_df)
+head(seasonal_df$Cell_Unit)
+length(unique(seasonal_df$Cell_Unit))
 
 
 glimpse(deployments_sf)
@@ -511,7 +476,10 @@ dep21 <- deployments_sf |>
   st_transform(crs = 4326) |> 
   dplyr::mutate(lon = sf::st_coordinates(geometry)[,2],
                 lat = sf::st_coordinates(geometry)[,1]) |> 
-  st_drop_geometry()
+  st_drop_geometry() |>
+  ## Remove
+  select(Cell_Unit, survey_year, lon, lat) |> 
+  distinct()
 
 ## *************************************************************
 ##
@@ -521,7 +489,7 @@ dep21 <- deployments_sf |>
 ## Duplicates arise via different deployment_ids but not cell_unit ids
 ## V1 vs V2 in the deployment_id
 ## Step3 data only contains the cell_unit ID
-## Deployments from owl DB have 1548 unique deployment_ids
+## Deployments from owl DB have 1730 unique deployment_ids
 ## ATFL example species from 2021 has 1652 individual ARU deployments
 ##
 ## *************************************************************
@@ -531,37 +499,56 @@ length(unique(dep21$deployment_name))
 length(unique(dep21$Cell_Unit))
 dup_unit <- dep21[which(duplicated(dep21$Cell_Unit)),]$Cell_Unit
 dup21 <- dep21[dep21$Cell_Unit %in% dup_unit, ]
-
+dep21 <- distinct(dep21)
 
 ## Match the ATFL data with the 2021 survey data
-atfl.jay <- atfl |>
+seasonal_df_meta <- seasonal_df |>
   mutate(Cell_Unit = ifelse(
     stringr::str_detect(string = Cell_Unit, pattern = "C[0-9]{3}"),
     gsub(pattern = "(C)([0-9]{3})(_U[0-9]+)$", replacement = "\\10\\2\\3", x = Cell_Unit),
     Cell_Unit
   )) |> 
-  left_join(dep21)
+  left_join(dep21) |> 
+  select(Cell_Unit, survey_year, lon, lat, everything()) 
+  
+missing <- dep21[!dep21$Cell_Unit %in% seasonal_df_meta$Cell_Unit,]
+# 
+# atfl.sf.ok <- atfl.sf[which(!is.na(atfl.jay$survey_year)),]
+# atfl.sf.ok <- atfl.sf.ok |> 
+#   dplyr::select(Cell_Unit, deployment_name, survey_year, lon, lat, everything()) |> 
+#   rowwise() |> 
+#   mutate(sum = sum(c_across("2021-03-01":"2021-08-30"))) |> 
+#   ungroup() |> 
+#   dplyr::select(Cell_Unit, deployment_name, survey_year, lon, lat, sum) |> 
+#   st_as_sf(coords = c("lon", "lat"), crs = 4326)
+# 
+# ggplot(data = atfl.sf.ok) + 
+#   geom_sf(aes(color = sum))
 
-missing <- dep21[!dep21$Cell_Unit %in% atfl.jay$Cell_Unit,]
 
-atfl.sf.ok <- atfl.sf[which(!is.na(atfl.jay$survey_year)),]
-atfl.sf.ok <- atfl.sf.ok |> 
-  dplyr::select(Cell_Unit, deployment_name, survey_year, lon, lat, everything()) |> 
-  rowwise() |> 
-  mutate(sum = sum(c_across("2021-03-01":"2021-08-30"))) |> 
-  ungroup() |> 
-  dplyr::select(Cell_Unit, deployment_name, survey_year, lon, lat, sum) |> 
-  st_as_sf(coords = c("lon", "lat"), crs = 4326)
 
-ggplot(data = atfl.sf.ok) + 
-  geom_sf(aes(color = sum))
-
+## -------------------------------------------------------------
+##
+## Begin Section: 2021 ARU Metadata
+##
+## -------------------------------------------------------------
+## *************************************************************
+##
+## Section Notes:
 ## Data file with locations from Connor. 
 ## It seems like there are some inconsistencies with the leading zero 
 ## in the cell ID name. 
 ## My guess is that importing the files into excel dropped the leading zeros 
 ## since all of the issues are occurring with cells that have 3 numbers when they should have 4. 
 ## Add in a leading zero if the string only has 3 numbers after the "C" and let's see what happens.
+##
+## The 2021 ARU meta data file from Connor is specific to 2021, where the DB from Jay has the location
+## information for each year. 
+## 
+## For analyses, I plan to extract/create variables on interest so I really just need to spatial
+## locations and the extractions can be done on my part.
+##
+## *************************************************************
 
 ## Load in the ARU metadata
 aru_meta <- readr::read_csv(here("Data/ARU_120m.csv"))
@@ -571,14 +558,10 @@ aru_meta$Cell_Unit <- paste0(aru_meta$cell_id, "_", aru_meta$unit_numbe)
 
 ## Take a couple of things for testing
 aru_meta <- aru_meta |>
-  dplyr::select(Cell_Unit, survey_yea, X, Y, cc_cfo_mn)
-
-## Attempt to merge this with the ATFL dataset
-spec.meta <- spec.rich |> 
-  left_join(aru_meta)
+  dplyr::select(Cell_Unit, survey_yea, X, Y, topo_elev, standage_f3_mn, contains("fire"))
 
 ## Fixing the leading zero issue
-spec.zeros <- spec.rich |>
+seasonal_df <- seasonal_df |>
   mutate(Cell_Unit = ifelse(
     stringr::str_detect(string = Cell_Unit, pattern = "C[0-9]{3}"),
     gsub(pattern = "(C)([0-9]{3})(_U[0-9]+)$", replacement = "\\10\\2\\3", x = Cell_Unit),
@@ -586,16 +569,19 @@ spec.zeros <- spec.rich |>
   ))
 
 ## Attempt to rejoin now
-spec_meta <- spec.zeros |> 
-  left_join(aru_meta)
+seasonal_df_meta <- seasonal_df |> 
+  left_join(aru_meta) |> 
+  select(Cell_Unit, 
+         Year = survey_yea, 
+         Long = X, 
+         Lat = Y,
+         everything())
 
-## Issue fixed
-sum(is.na(spec_meta$survey_yea))
+## ARU Meta
+aru_filter <- aru_meta |> 
+  filter(Cell_Unit %in% seasonal_df_meta$Cell_Unit)
 
-## Make the ATFL data an SF object
-class(spec_meta)
-spec.sf <- spec_meta |> 
-  st_as_sf(coords = c("X", "Y"), crs = 4326)
+## Write the DF
+data.table::fwrite(seasonal_df_meta,
+                   here::here("Data/Generated_DFs/2021_SeasonalSpeciesMat.csv"))
 
-spec.sf |>
-  mapview(zcol = '2021-06-15', layer.name = 'Naive Richness')
