@@ -100,52 +100,21 @@ summary(thresh)
 ##
 ## *************************************************************
 
-# ## Load in an example species file
-# atfl <- readr::read_csv(here("./Data/Detections_By_Species/2021/Ash-throated_Flycatcher_Gt0.563_2021_max_score_summary.csv"))
-# atfl <- readr::read_csv(here("./Data/Detections_By_Species/2022/Ash-throated_Flycatcher_Gt0.563_2022_max_score_summary.csv"))
-# 
-# ## Structure of the dataframe
-# str(atfl)
-# 
-# ## Replace the "." notation with a "0"
-# atfl[atfl == "."] <- "0"
-# 
-# ## Make all characters numeric
-# atfl <- atfl |> 
-#   mutate(across(2:last_col(), ~as.numeric(.))) #characters to numeric 
-# 
-# ## What is the max value in the df
-# min.atfl <- atfl[, 2:ncol(atfl)]
-# min.val <- min(min.atfl[min.atfl > 0])
-# 
-# ## Minimum for the threshold
-# th <- thresh[thresh$species == "Ash-throated Flycatcher",]$cutoff90.r_conf
-# 
-# ## Make the detections binary
-# atfl <- atfl |> 
-#   mutate(across(2:last_col(), ~ifelse(. > 0, 1, 0))) #make binary
-#   
-# ## What is the total number of detections at each site
-# siteDet <- rowSums(atfl[,2:ncol(atfl)])
-# DetSites <- which(siteDet >= 2)
-# 
-# ## How many detections of Ash-throated Flycatcher across Sierra
-# paste("Ash-throated Flycatcher detections:", sum(atfl[2:ncol(atfl)]))
-# 
-# ## Total Survey records
-# (ncol(atfl)-1) * nrow(atfl)
-# 
-# ## % Detections
-# atfl_pct_det <- sum(atfl[2:ncol(atfl)]) / ((ncol(atfl)-1) * nrow(atfl)) * 100
-# 
-# ## Percentage of surveys with ATFL
-# paste("Percent of surveys with ATFL confirmed:", round(atfl_pct_det, digits = 2), "%")
-
 ## -------------------------------------------------------------
 ##
 ## Begin Section: ARU species detection function
 ##
 ## -------------------------------------------------------------
+
+## *************************************************************
+##
+## Section Notes:
+## To-do: Build in functionality for:
+## 1. Filtering by effort
+## 2. Handling multiple years of data
+##
+## *************************************************************
+
 
 ## Add function to format the species data according to thresholds and other parameters of
 ## interest.
@@ -157,7 +126,11 @@ ac_det_filter <- function(d,
                           species,
                           no_dets = 1,
                           binary = T,
-                          date_range = NULL) {
+                          date_range = NULL,
+                          eff,
+                          eff_site_name,
+                          eff_summary_cols,
+                          eff_filter = 1) {
   
   ## Retrieve the threshold from the species of interest
   sp.thresh <- d_thresh[d_thresh$species == species, ]
@@ -293,12 +266,92 @@ ac_det_filter <- function(d,
     d.thresh <- tmp.detect |>
       dplyr::select(all_of(c(other.cols, date.cols)))
     
+    ## Bring in the effort variables
+    if(!missing(eff)){
+      cat("Missing effort covariates.\nData is not filtered for ARU effort.")
+    } else {
+      cat("Effort file provided.\nChecking effort covariates.")
+    }
+    
+    if(!missing(eff) & !missing(eff_summary_cols)){
+      cat("Effort file provided.\nEffort summary columns provided.")
+      if(as.numeric(e.date - s.date) < eff_filter){
+        stop("Effort day filter is greater than time interval.")
+      } else {
+          cat("Seasonal window:", as.numeric(e.date - s.date), "days. Effort filter:", eff_filter, "days")
+      }
+      
+      cat()
+      
+      eff <- eff |> 
+        select(all_of(c(eff_site_name, date.cols, eff_summary_cols)))|> 
+        rename(Cell_Unit := !!eff_site_name) |> 
+        filter(effort_days >= eff_filter)
+      
+      ## Filter the detection data by effort sites
+      d.thresh <- d.thresh |> 
+        filter(Cell_Unit %in% eff$Cell_Unit)
+    }
+    
+    if(!missing(eff) & missing(eff_summary_cols)){
+      
+      cat("Effort file provided.\nSummary columns missing.\nAttempting to generate summary cols.")
+      
+      if(as.numeric(e.date - s.date) < eff_filter){
+        stop("Effort day filter is greater than time interval.")
+      } else {
+        cat("Seasonal window:", as.numeric(e.date - s.date), "days. Effort filter:", eff_filter, "days")
+      }
+      
+      eff <- eff |> 
+        select(all_of(c(eff_site_name, date.cols))) |> 
+        rename(Cell_Unit := !!eff_site_name)
+      
+      # Apply function to each row to find the first non-zero value
+      first_non_zero_per_row <- apply(eff[, date.cols], 1, function(row) {
+        # Find the index of the first non-zero value
+        non_zero_cols <- which(row != 0)
+        if(length(non_zero_cols) > 0){
+          return(names(eff[,date.cols])[non_zero_cols[1]])
+        } else {
+          return(NA)
+        }
+      })
+      
+      # Show the result
+      eff$firstday <- purrr::map_vec(first_non_zero_per_row, ~ if (!is.na(.x)) as.Date(.x) else NA)
+      eff$firstday_julian <- as.numeric(format(eff$firstday, "%j"))
+      eff$effort_days <- rowSums(eff[, date.cols] > 0, na.rm = T)
+      
+      ## Filter ARUs by effort_days
+      eff <- eff |> filter(effort_days >= eff_filter)
+      
+      ## Filter the ARU detections by this
+      d.thresh <- d.thresh |> 
+        filter(Cell_Unit %in% eff$Cell_Unit)
+      
+    }
+    
     ## Remove superfluous DFs made
     rm(tmp.detect)
   }
   return(d.thresh)
   
 } #function
+
+fun.check <- ac_det_filter(d = test,
+              d_thresh = thresh,
+              thresh_scale = "Conf",
+              thresh_cut = "99",
+              time_format = "ymd",
+              species = names(sp.det.files)[i],
+              no_dets = 2,
+              binary = T,
+              date_range = c("2021-06-01", "2021-07-30"),
+              eff = effort,
+              eff_site_name = "Cell_U",
+              eff_filter = 10)
+
 
 ## -------------------------------------------------------------
 ##
@@ -319,6 +372,17 @@ sp.det.paths <- sp.det.paths[!str_detect(sp.det.paths, "Effort")]
 sp.det.files <- lapply(sp.det.paths, readr::read_csv)
 names(sp.det.files) <- gsub(".*([0-9]{4}[[:punct:]])", "", gsub("_", " ", gsub(pattern = "_Gt.*", replacement = "", x = sp.det.paths)))
 
+## TEMPORARY
+sp.det.paths22 <- list.files(here("./Data/Detections_By_Species/2022/"), full.names = T)
+sp.det.paths22 <- sp.det.paths22[!str_detect(sp.det.paths22, "Effort")]
+
+sp.det.files22 <- lapply(sp.det.paths22, readr::read_csv)
+names(sp.det.files22) <- gsub(".*([0-9]{4}[[:punct:]])", "", gsub("_", " ", gsub(pattern = "_Gt.*", replacement = "", x = sp.det.paths22)))
+
+## Effort file
+effort <- readr::read_csv(here("./Data/Detections_By_Species/2021/2021_Effort_perUnit_0400-0859_1800-1959_split0.csv"))
+
+
 ## Looping the function over species
 sp.det.list <- vector(mode = "list", length = length(sp.det.files))
 for(i in 1:length(sp.det.files)){
@@ -330,7 +394,7 @@ for(i in 1:length(sp.det.files)){
                               species = names(sp.det.files)[i],
                               no_dets = 2,
                               binary = T,
-                              date_range = c("2021-05-01", "2021-07-30"))
+                              date_range = c("2021-06-01", "2021-07-30"))
   names(sp.det.list)[i] <- names(sp.det.files)[i]
   print(paste("Processed and adding:", names(sp.det.list)[i]))
   
