@@ -39,6 +39,21 @@ library(here)
 ##
 ## -------------------------------------------------------------
 
+## *************************************************************
+##
+## Section Notes:
+## The following data files correspond to Step3 in the BirdNET.
+## The purpose the following block should be to load the Step3 data and create 
+## the detection history across the secondary sampling periods. We can write a small
+## function to accomplish this based on some modifications we want.
+##
+##
+## To-do: Build in functionality for:
+## 1. Filtering by effort
+## 2. Handling multiple years of data
+##
+## *************************************************************
+
 ## Add function to format the species data according to thresholds and other parameters of
 ## interest.
 ac_det_filter <- function(d,
@@ -49,7 +64,12 @@ ac_det_filter <- function(d,
                           species,
                           no_dets = 1,
                           binary = T,
-                          date_range = NULL) {
+                          date_range = NULL,
+                          eff,
+                          eff_site_name,
+                          eff_summary_cols,
+                          eff_filter = 1,
+                          verbose = T){
   
   ## Retrieve the threshold from the species of interest
   sp.thresh <- d_thresh[d_thresh$species == species, ]
@@ -59,7 +79,7 @@ ac_det_filter <- function(d,
     tmp.cols <- which(stringr::str_detect(colnames(sp.thresh), pattern = "conf"))
     tmp.cols <- sp.thresh[, tmp.cols]
     if (all(stringr::str_detect(colnames(tmp.cols), thresh_cut))) {
-      print("Threshold not named in threshold dataframe. Check column names and 'thresh_cut'.")
+      warning("Threshold not named in threshold dataframe. Check column names and 'thresh_cut'.")
       tmp.thresh <- NA
     } else {
       tmp.thresh <- pull(tmp.cols[which(stringr::str_detect(colnames(tmp.cols), thresh_cut))])
@@ -70,7 +90,7 @@ ac_det_filter <- function(d,
     )
     tmp.cols <- sp.thresh[, tmp.cols]
     if (all(stringr::str_detect(colnames(tmp.cols), thresh_cut))) {
-      print("Threshold not named in threshold dataframe. Check column names and 'thresh_cut'.")
+      warning("Threshold not named in threshold dataframe. Check column names and 'thresh_cut'.")
       tmp.thresh <- NA
     } else {
       tmp.thresh <- pull(tmp.cols[which(stringr::str_detect(colnames(tmp.cols), thresh_cut))])
@@ -132,6 +152,10 @@ ac_det_filter <- function(d,
       
       # Convert the date columns to a format
       samp.dates <- lubridate::dmy(date.cols)
+      
+    } else if(!time_format %in% c("ymd", "mdy", "dmy")){
+      stop("Date format does not match accepted. 
+           Please use 'ymd', 'mdy', or 'dmy'")
     }
     
     ## Check successful
@@ -184,10 +208,79 @@ ac_det_filter <- function(d,
     ## Drop the helper columns and return d.thresh as the fixed df
     d.thresh <- tmp.detect |>
       dplyr::select(all_of(c(other.cols, date.cols)))
-    
-    ## Remove superfluous DFs made
-    rm(tmp.detect)
   }
+  
+  ## Bring in the effort variables
+  if(missing(eff)){
+    if(verbose == T){cat("Missing effort covariates.\nData is not filtered for ARU effort.")}
+  } else {
+    if(verbose == T){cat("Effort file provided.\nChecking effort covariates.")}
+  }
+  
+  if(!missing(eff) & !missing(eff_summary_cols)){
+    if(verbose == T){cat("Effort file provided.\nEffort summary columns provided.")}
+    if(as.numeric(e.date - s.date) < eff_filter){
+      stop("Effort day filter is greater than time interval.")
+    } else {
+      if(verbose == T){cat("Seasonal window:", 
+                           as.numeric(e.date - s.date), 
+                           "days. Effort filter:", 
+                           eff_filter, "days")}
+    }
+    
+    eff <- eff |> 
+      select(all_of(c(eff_site_name, date.cols, eff_summary_cols)))|> 
+      rename(Cell_Unit := !!eff_site_name) |> 
+      filter(effort_days >= eff_filter)
+    
+    ## Filter the detection data by effort sites
+    d.thresh <- d.thresh |> 
+      filter(Cell_Unit %in% eff$Cell_Unit)
+  }
+  
+  if(!missing(eff) & missing(eff_summary_cols)){
+    
+    if(verbose == T){cat("Effort file provided.\nSummary columns missing.
+                         \nAttempting to generate summary cols.")}
+    
+    if(as.numeric(e.date - s.date) < eff_filter){
+      stop("Effort day filter is greater than time interval.")
+    } else {
+      if(verbose == T){cat("Seasonal window:", 
+                           as.numeric(e.date - s.date), 
+                           "days. Effort filter:", 
+                           eff_filter, "days")}
+    }
+    
+    eff <- eff |> 
+      select(all_of(c(eff_site_name, date.cols))) |> 
+      rename(Cell_Unit := !!eff_site_name)
+    
+    # Apply function to each row to find the first non-zero value
+    first_non_zero_per_row <- apply(eff[, date.cols], 1, function(row) {
+      # Find the index of the first non-zero value
+      non_zero_cols <- which(row != 0)
+      if(length(non_zero_cols) > 0){
+        return(names(eff[,date.cols])[non_zero_cols[1]])
+      } else {
+        return(NA)
+      }
+    })
+    
+    # Show the result
+    eff$firstday <- purrr::map_vec(first_non_zero_per_row, ~ if (!is.na(.x)) as.Date(.x) else NA)
+    eff$firstday_julian <- as.numeric(format(eff$firstday, "%j"))
+    eff$effort_days <- rowSums(eff[, date.cols] > 0, na.rm = T)
+    
+    ## Filter ARUs by effort_days
+    eff <- eff |> filter(effort_days >= eff_filter)
+    
+    ## Filter the ARU detections by this
+    d.thresh <- d.thresh |> 
+      filter(Cell_Unit %in% eff$Cell_Unit)
+    
+  }
+  
   return(d.thresh)
   
 } #function
