@@ -90,50 +90,47 @@ summary(thresh)
 ## Begin Section: Processing species detections
 ##
 ## -------------------------------------------------------------
+## *************************************************************
+##
+## Section Notes: Source ac_det_filter() from Sierra_functions.R
+## 
+## To-do:
+## 1. Streamline the multi-year species data processing
+## 2. Unify with spatial coordinates from CAbioacoustics
+## 3. Write yearly files for community data (summarized; naive biodiv. models)
+## 4. Write yearly files for community data (date-detection; occ models)
+##
+## *************************************************************
+
 
 ## Source the ac_det_filter function
 source(here("./Code/Sierra_functions.R"))
 
+## threshold file
+thresh <- readr::read_csv("./Data/Thresholds_2021_20230309.csv")
 
-## Read in multiple species
-sp.det.paths <- list.files(here("./Data/Detections_By_Species/2021/"), full.names = T)
-sp.det.paths <- sp.det.paths[!str_detect(sp.det.paths, "Effort")]
-
-sp.det.files <- lapply(sp.det.paths, function(x) readr::read_csv(x, show_col_types = FALSE))
-names(sp.det.files) <- gsub(".*([0-9]{4}[[:punct:]])", "", gsub("_", " ", gsub(pattern = "_Gt.*", replacement = "", x = sp.det.paths)))
-
-## TEMPORARY
-sp.det.paths22 <- list.files(here("./Data/Detections_By_Species/2022/"), full.names = T)
-sp.det.paths22 <- sp.det.paths22[!str_detect(sp.det.paths22, "Effort")]
-
-sp.det.files22 <- lapply(sp.det.paths22, readr::read_csv)
-names(sp.det.files22) <- gsub(".*([0-9]{4}[[:punct:]])", "", gsub("_", " ", gsub(pattern = "_Gt.*", replacement = "", x = sp.det.paths22)))
-
-## Effort file
-effort21 <- readr::read_csv(here("./Data/Detections_By_Species/2021/2021_Effort_perUnit_0400-0859_1800-1959_split0.csv"))
-effort22 <- readr::read_csv(here("./Data/Detections_By_Species/2022/2022_Effort_perUnit_0400-0859_1800-1959_split0.csv"))
-
-## Looping the function over species
-sp.det.list <- vector(mode = "list", length = length(sp.det.files))
-for(i in 1:length(sp.det.files)){
-  sp.det.list[[i]] <- ac_det_filter(d = sp.det.files[[i]],
-                              d_thresh = thresh,
-                              thresh_scale = "Conf",
-                              thresh_cut = "99",
-                              time_format = "ymd",
-                              species = names(sp.det.files)[i],
-                              no_dets = 2,
-                              binary = T,
-                              date_range = c("2021-06-01", "2021-07-30"),
-                              eff = effort21,
-                              eff_site_name = "Cell_U",
-                              eff_filter = 10)
-  names(sp.det.list)[i] <- names(sp.det.files)[i]
-  cat("\nProcessed and adding:", names(sp.det.list)[i])
-  
-}
-
-names(sp.det.list)
+## Run the function
+aru_det_file_gen(det_dir = "C:/Users/srk252/Documents/Rprojs/Sierra_Biodiv/Data/Detections_By_Species/",
+                 det_years = c("2022", "2023"),
+                 seas_format = T,
+                 seas_outdir = "C:/Users/srk252/Documents/Rprojs/Sierra_Biodiv/Data/Generated_DFs/Seasonal_Summaries/",
+                 occ_format = F,
+                 occ_outdir = "C:/Users/srk252/Documents/Rprojs/Sierra_Biodiv/Data/Generated_DFs/Occ_Mod_Data/",
+                 eff_file = T,
+                 coord_link = T,
+                 d_thresh = thresh,
+                 thresh_scale = "Conf",
+                 thresh_cut = "99",
+                 time_format = "ymd",
+                 no_dets = 2,
+                 binary = T,
+                 date_range = c(#"2021-06-01", "2021-07-30"
+                                "2022-06-01", "2022-07-30",
+                                "2023-06-01", "2023-07-30"
+                                ),
+                 eff_site_name = "Cell_U",
+                 eff_filter = 10,
+                 verbose = F)
 
 ## # of detections
 lapply(sp.det.list, function(x) paste(names(x), "detections:", sum(x[,2:ncol(x)])))
@@ -184,6 +181,9 @@ print(seasonal_df)
 
 ## `seasonal_df` now captures the naive occupancy for each species
 ## across the Sierra ARUs and can be used as a site x species matrix
+seasonal_df$Survey_Year <- 2022
+seasonal_df <- seasonal_df |> 
+  select(Cell_Unit, Survey_Year, everything())
 colnames(seasonal_df)
 
 ## -------------------------------------------------------------
@@ -210,7 +210,7 @@ cb_connect_db()
 
 ## Set some values for filters
 syear <- 2021
-eyear <- 2023
+eyear <- 2024
 
 ## SF needs to be loaded to execute
 ownership <- c('any')
@@ -268,14 +268,14 @@ glimpse(deployments_sf)
 
 ## Take only the 2021 spatial data
 dep21 <- deployments_sf |> 
-  filter(survey_year == 2021) |> 
+  filter(survey_year == 2022) |> 
   mutate(Cell_Unit = stringr::str_remove(deployment_name, "G[0-9]+_V[0-9]+_")) |> 
   st_transform(crs = 4326) |> 
   dplyr::mutate(lon = sf::st_coordinates(geometry)[,2],
                 lat = sf::st_coordinates(geometry)[,1]) |> 
   st_drop_geometry() |>
   ## Remove
-  select(Cell_Unit, survey_year, lon, lat) |> 
+  select(Cell_Unit, deployment_name, survey_year, lon, lat) |> 
   distinct()
 
 ## *************************************************************
@@ -306,7 +306,7 @@ seasonal_df_meta <- seasonal_df |>
     Cell_Unit
   )) |> 
   left_join(dep21) |> 
-  select(Cell_Unit, survey_year, lon, lat, everything()) 
+  select(Cell_Unit, deployment_name, survey_year, lon, lat, everything()) 
   
 missing <- dep21[!dep21$Cell_Unit %in% seasonal_df_meta$Cell_Unit,]
 # 
