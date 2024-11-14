@@ -315,6 +315,7 @@ aru_det_file_gen <- function(det_dir = c("C:/Users/srk252/Documents/Rprojs/Sierr
                              seas_format = F,
                              seas_outdir = NULL,
                              eff_file = T,
+                             coord_link = F,
                              
                              ## Passing to ac_det_filter()
                              d_thresh = thresh,
@@ -335,7 +336,12 @@ aru_det_file_gen <- function(det_dir = c("C:/Users/srk252/Documents/Rprojs/Sierr
   ## Control flow for ditching large files
   ## as they are processed.
   
-  ## Quick checks
+  ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  ##
+  ## Subsection: Control Flow for files and directories
+  ##
+  ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  
   if(!is.character(det_dir)){stop("det_dir expects directory path.")}
   tmp.dir <- sapply(det_years, function(x) paste(det_dir, x, sep = "/"))
   tmp.dir <- gsub("//", "/", tmp.dir)
@@ -435,7 +441,14 @@ aru_det_file_gen <- function(det_dir = c("C:/Users/srk252/Documents/Rprojs/Sierr
     stop("No files will be generated. Function stopped.")
   }
   
-  ## For loop for acoustic survey years
+  
+  ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  ##
+  ## Subsection: For loop for acoustic surveys
+  ##
+  ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  ## i-loop for years
   for(i in 1:length(det_years)){
     
     ## Report the year
@@ -521,6 +534,12 @@ aru_det_file_gen <- function(det_dir = c("C:/Users/srk252/Documents/Rprojs/Sierr
     
     names(sp.det.list)
     
+    ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    ##
+    ## Subsection: File saving for occupancy model format
+    ##
+    ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    
     ## Create the data arrays for occupancy models
     ## Write the list as .RDA files + metadata
     if(occ_format == T){
@@ -530,6 +549,12 @@ aru_det_file_gen <- function(det_dir = c("C:/Users/srk252/Documents/Rprojs/Sierr
                                       "_OccSppList.RData"))
       write.csv(meta.df, file = paste0(occ.dir.tmp, yr.tmp, "_OccMetaFilterParams.csv"))
     }
+    
+    ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    ##
+    ## Subsection: Creating the seasonal community matrices
+    ##
+    ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     
     if(seas_format == T){
       
@@ -574,11 +599,76 @@ aru_det_file_gen <- function(det_dir = c("C:/Users/srk252/Documents/Rprojs/Sierr
         }
       }, .init = NULL)
       
-      ## Write the files for seasonal dfs
+      ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      ##
+      ## Subsection: Link with the GPS coordinates from deployments
+      ##
+      ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      if(coord_link == T){
+        ## Connect to DB
+        cb_connect_db()
+        
+        ## SF needs to be loaded to execute
+        ownership <- c('any')
+        cell_list <- cb_cells_by_ownership(ownership)
+        
+        ## Study type
+        study <- c('Sierra Monitoring')
+        
+        ## Get the deployment information
+        deployments_df <- 
+          conn |> 
+          dplyr::tbl('acoustic_field_visits') |> 
+          dplyr::filter(
+            is_invalid == 0,
+            cell_id %in% cell_list,
+            study_type %in% study,
+            survey_year == yr.tmp
+          ) |> 
+          collect() |> 
+          dplyr::select(deployment_name, survey_year, matches("utm"))
+        
+        ## Disconnect DB
+        cb_disconnect_db()
+        
+        ## Create SF object
+        deployments_geo <- 
+          deployments_df |> 
+          group_split(utm_zone) |> 
+          map_dfr(cb_make_aru_sf) |> 
+          mutate(Cell_Unit = stringr::str_remove(deployment_name, "G[0-9]+_V[0-9]+_")) |> 
+          st_transform(crs = 4326) |> 
+          dplyr::mutate(lon = sf::st_coordinates(geometry)[,2],
+                        lat = sf::st_coordinates(geometry)[,1]) |> 
+          st_drop_geometry() |>
+          ## Remove
+          select(Cell_Unit, deployment_name, survey_year, lon, lat)
+        
+        ## Link with the seasonal_df
+        seasonal_df_geo <- seasonal_df |>
+          mutate(Cell_Unit = ifelse(
+            stringr::str_detect(string = Cell_Unit, pattern = "C[0-9]{3}"),
+            gsub(pattern = "(C)([0-9]{3})(_U[0-9]+)$", replacement = "\\10\\2\\3", x = Cell_Unit),
+            Cell_Unit
+          )) |> 
+          left_join(deployments_geo) |> 
+          select(Cell_Unit, deployment_name, survey_year, lon, lat, everything())
+        
+        ## Rename the new df to save
+        seasonal_df <- seasonal_df_geo
+        
+      }
+      
+      ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      ##
+      ## Subsection: Write files for the seasonal dfs
+      ##
+      ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
       ## Write the DF
-      ## Write the metadata
       data.table::fwrite(seasonal_df,
                          paste0(seas_outdir, "/", yr.tmp, "_SeasonalSpeciesMat.csv"))
+      
+      ## Write the metadata
       write.csv(meta.df, file = paste0(seas_outdir, "/", yr.tmp, "_SeasonalMetaFilterParams.csv"))
       
     } #seasonal format
