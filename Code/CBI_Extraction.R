@@ -52,7 +52,10 @@ aru_locs <- aru_meta |>
 aru_locs <- st_as_sf(aru_locs, coords = c("Long", "Lat"), crs = 4326)
 
 ## Environmental extraction function
-aru_env_prep <- function(env_prod, # character vector of prod names
+## Acceptable fire products
+## fire_interval, most_recent_fire, fire_frequency, number of fires,
+## and landscape metrics
+aru_env_prep <- function(fire_prod, # character vector of desired fire output
                          aru_locs, # Data.frame with coordinates
                          id_col = "Cell_Unit",
                          year_col = NULL,
@@ -116,46 +119,49 @@ aru_env_prep <- function(env_prod, # character vector of prod names
     cbi_files <- list.files(cbi_path, full.names = T, pattern = "(cbi_cat_)(\\d{4})(*.tif$)")
     
     ## Read stack of CBI files
-    cbi_stack <- tryCatch({
-      res <- terra::rast(cbi_files)
-      return(res)
-    }, error = function(e) {
-      ## Error message
-      message("Error:", e$message)
-      
-      ## if error is different spatial extents
-      if(stringr::str_detect(e$message, "extents do not match")){
+    cbi_stack_fun <- function(cbi_files){
+      tryCatch({
+        res <- terra::rast(cbi_files)
+        return(res)
+      }, error = function(e) {
+        ## Error message
+        message("Error:", e$message)
         
-        ## Print a message
-        cat("Extents do not match. Attempting to resolve. \n This could take a minute...")
+        ## if error is different spatial extents
+        if(stringr::str_detect(e$message, "extents do not match")){
+          
+          ## Print a message
+          cat("Extents do not match. Attempting to resolve. \n This could take a minute...")
+          
+          ## Fix extents
+          cbi_list <- lapply(cbi_files, rast)
+          ## Extents for all rasters
+          l_extent <- lapply(cbi_list, ext)
+          ## Make all extents bboxes
+          cbi_bbox <- lapply(l_extent, function(x) vect(x))
+          ## Union to find the largest extent
+          big.ext <- Reduce(terra::union, cbi_bbox)
+          ## Set the CRS
+          crs(big.ext) <- crs(cbi_list[[1]])
+          ## Extend all rasters to the same extent
+          cbi_list <- lapply(cbi_list, function(x) extend(x, big.ext))
+          ## Restack the rasters
+          cbi_stack <- try({
+            res <- do.call(c, cbi_list)
+          }, silent = T)
+          
+          if(inherits(cbi_stack, "try-error")){
+            stop("Check raster data. Could not stack.")
+          } else {
+            cat("Successful raster matching.")
+            return(res)
+          } #if error after alignment
+          
+        } #if error
         
-        ## Fix extents
-        cbi_list <- lapply(cbi_files, rast)
-        ## Extents for all rasters
-        l_extent <- lapply(cbi_list, ext)
-        ## Make all extents bboxes
-        cbi_bbox <- lapply(l_extent, function(x) vect(x))
-        ## Union to find the largest extent
-        big.ext <- Reduce(terra::union, cbi_bbox)
-        ## Set the CRS
-        crs(big.ext) <- crs(cbi_list[[1]])
-        ## Extend all rasters to the same extent
-        cbi_list <- lapply(cbi_list, function(x) extend(x, big.ext))
-        ## Restack the rasters
-        cbi_stack <- try({
-        res <- do.call(c, cbi_list)
-        }, silent = T)
-        
-        if(inherits(cbi_stack, "try-error")){
-          stop("Check raster data. Could not stack.")
-        } else {
-          cat("Successful raster matching.")
-          return(res)
-        } #if error after alignment
-        
-      } #if error
-      
-    })
+      })}
+    
+    cbi_stack <- cbi_stack_fun(cbi_files)
     
     ## Add in zeros for the raster for downstream processing
     temp <- rast(nrows = nrow(cbi_stack[[1]]),
@@ -213,22 +219,140 @@ aru_env_prep <- function(env_prod, # character vector of prod names
     aru_locs <- st_transform(aru_locs,
                              crs = crs(cbi_stack))
     
+    ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    ##
+    ## Subsection: Calculate fire variables
+    ##
+    ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    years <- as.numeric(names(cbi_stack))
+    
+    if("time_since_fire" %in% fire_prod){
+      ## Time to most recent fire
+      time_since_fire <- terra::app(cbi_stack, 
+                                    fun = function(x) time_to_most_recent_fire(cell_values = x,
+                                                                               years = years))
+    }
+    
+    if("fire_freq" %in% fire_prod){
+      ## Fire frequency (num fires/total record length)
+      fire_freq <- terra::app(cbi_stack, 
+                              fun = function(x) fire_freq_calc(cell_values = x,
+                                                               years = years))
+    }
+    
+    if("fire_ret_int" %in% fire_prod){
+      ## Fire return interval (mean of time between successive fires)
+      fire_return_int <- terra::app(cbi_stack, 
+                                    fun = function(x) fire_return_int(cell_values = x, 
+                                                                      years = years))
+    }
+    
+    ## Report the status of s2 geometry for convenience
+    if(!is.null(buffer_size)){
+      if(sf_use_s2() == T){
+        print("s2 geometry enabled. Buff_size interpreted as meters.")
+      } else {
+        print("s2 disabled, if locations are geodetic (lat/lon) units interpretted as degrees.")
+      }
+    }
+    
+    ## Buffer extraction code from Jay (tidy code)
+    ## Retrieve variable names from the
+    ## WIP
+    if(any(fire_prod %in% c("time_since_fire", "fire_freq", "fire_ret_int"))){
+      variable_name <- fire_prod
+      fire_buff_out <- vector(mode = "list", length = length(fire_prod))
+      
+      for(var in 1:length(variable_name)){
+        
+        var.tmp <- variable_name[var]
+        
+        if(var.tmp == "time_since_fire"){
+          fire_buff_extract <-
+            buff_size %>%
+            # create column names
+            str_c(var.tmp, ., sep = '_') |>
+            set_names() |>
+            map_dfr(
+              \(x)
+              exactextractr::exact_extract(
+                time_since_fire,
+                # buffer points
+                aru_locs |> st_buffer(as.numeric(str_extract(x, "\\d"))),
+                fun = 'mean'
+              )
+            ) |> 
+            bind_cols(st_drop_geometry(aru_locs[,id_col]))
+          
+          fire_buff_out[[var]] <- fire_buff_extract
+          
+        }
+        
+        if(var.tmp == "fire_freq"){
+          fire_buff_extract <-
+            buff_size %>%
+            # create column names
+            str_c(var.tmp, ., sep = '_') |>
+            set_names() |>
+            map_dfr(
+              \(x)
+              exactextractr::exact_extract(
+                fire_freq,
+                # buffer points
+                aru_locs |> st_buffer(as.numeric(str_extract(x, "\\d"))),
+                fun = 'mean'
+              )
+            ) |> 
+            bind_cols(st_drop_geometry(aru_locs[,id_col]))
+          
+          fire_buff_out[[var]] <- fire_buff_extract
+        }
+        
+        if(var.tmp == "fire_ret_int"){
+          fire_buff_extract <-
+            buff_size %>%
+            # create column names
+            str_c(var.tmp, ., sep = '_') |>
+            set_names() |>
+            map_dfr(
+              \(x)
+              exactextractr::exact_extract(
+                fire_return_int,
+                # buffer points
+                aru_locs |> st_buffer(as.numeric(str_extract(x, "\\d"))),
+                fun = 'mean'
+              )
+            ) |> 
+            bind_cols(st_drop_geometry(aru_locs[,id_col]))
+          
+          fire_buff_out[[var]] <- fire_buff_extract
+        }
+        
+      }
+    }
+    
     ## Block for what to do with CBI Fire Data
     if(landscape_metrics == TRUE){
       if(is.null(buff_size) | is.null(hex_size)){
         if(!is.null(id_col) & any(str_detect(class(aru_locs), "sf"))){
-          id.v <- as.vector(unlist(st_drop_geometry(aru_test[, id_col])))
+          id.v <- as.vector(unlist(st_drop_geometry(aru_locs[, id_col])))
         } else {
           id.v <- NULL
         }
       cbi_lsm <- landscapemetrics::sample_lsm(landscape = cbi_stack,
-                                              y = aru_test,
+                                              y = aru_locs,
                                               plot_id = id.v,
                                               shape = "circle",
                                               size = buff_size,
-                                              metric = "pland",
-                                              level = "class",
-                                              return_raster = T,
+                                              what = c("lsm_c_pland",
+                                                       "lsm_c_ed",
+                                                       "lsm_c_lpi",
+                                                       "lsm_l_shdi",
+                                                       "lsm_l_msidi",
+                                                       "lsm_l_msiei"),
+                                              #metric = "core",
+                                              #level = "patch",
+                                              return_raster = F,
                                               #type = "diversity metric",
                                               #classes_max = 3,
                                               verbose = FALSE,
@@ -240,25 +364,91 @@ aru_env_prep <- function(env_prod, # character vector of prod names
       ## Merge these
       cbi_lsm <- left_join(cbi_lsm, lyr_map)
       
-      ## DF manipulation - wide
-      test <- cbi_lsm |> 
-        mutate(FireClass = case_when(class == 0 ~ "Unburned",
-                                     class == 1 ~ "Low_Sev",
-                                     class == 2 ~ "Mod_Sev",
-                                     class == 3 ~ "High_Sev")) |> 
-        select(plot_id, level, lyr_name, FireClass, value) |> 
-        tidyr::pivot_wider(names_from = FireClass, values_from = value) |>
-        rowwise() |> 
-        mutate(SumFlag = sum(c_across(Unburned:Low_Sev), na.rm = T)) |> 
-        ungroup() |> 
-        mutate(Unburned = if_else(is.na(Unburned) & ceiling(SumFlag) == 100, 0, Unburned),
-               Low_Sev = if_else(is.na(Low_Sev) & ceiling(SumFlag) == 100, 0, Low_Sev),
-               Mod_Sev = if_else(is.na(Mod_Sev) & ceiling(SumFlag) == 100, 0, Mod_Sev),
-               High_Sev = if_else(is.na(High_Sev) & ceiling(SumFlag) == 100, 0, High_Sev))
-        
+      ## level of lsm
+      lsm_lev <- unique(cbi_lsm$level)
       
+      if(any(lsm_lev == "landscape")){
+        cbi_lsm_l <- cbi_lsm |> 
+          filter(level == "landscape") |> 
+          select(plot_id, level, lyr_name, metric, value) |> 
+          tidyr::pivot_wider(names_from = c(metric, lyr_name), 
+                             values_from = value,
+                             names_glue = "{lyr_name}_{metric}_l") |> 
+          select(!level)
+        
       }
-    }
+      
+      if(any(lsm_lev == "class")){
+        
+        fire_class <- c("Unburned", "Low_Sev", "Mod_Sev", "High_Sev")
+        
+        cbi_lsm_c <- cbi_lsm |> 
+          filter(level == "class") |> 
+          mutate(FireClass = case_when(class == 0 ~ "Unburned",
+                                       class == 1 ~ "Low_Sev",
+                                       class == 2 ~ "Mod_Sev",
+                                       class == 3 ~ "High_Sev")) |> 
+          select(plot_id, level, lyr_name, FireClass, metric, value) |> 
+          tidyr::pivot_wider(names_from = c(metric, FireClass, lyr_name), 
+                             values_from = value,
+                             names_glue = "{FireClass}_{lyr_name}_{metric}_c") |> 
+          select(!level)
+          
+      }
+      
+      if(exists("cbi_lsm_l") & exists("cbi_lsm_c")){
+        cbi_lsm <- full_join(cbi_lsm_l, cbi_lsm_c)
+      }
+      
+      # if(any(lsm_lev == "patch")){
+      #   
+      #   fire_class <- c("Unburned", "Low_Sev", "Mod_Sev", "High_Sev")
+      #   
+      #   cbi_lsm_p <- cbi_lsm |> 
+      #     filter(level == "patch") |> 
+      #     mutate(FireClass = case_when(class == 0 ~ "Unburned",
+      #                                  class == 1 ~ "Low_Sev",
+      #                                  class == 2 ~ "Mod_Sev",
+      #                                  class == 3 ~ "High_Sev")) |> 
+      #     select(plot_id, level, lyr_name, FireClass, metric, value) |> 
+      #     tidyr::pivot_wider(names_from = c(metric, FireClass, lyr_name), 
+      #                        values_from = value,
+      #                        names_glue = "{FireClass}_{lyr_name}_{metric}_c")
+      #   
+      # }
+      
+      
+      
+      # ## DF manipulation - wide
+      # fire_class <- c("Unburned", "Low_Sev", "Mod_Sev", "High_Sev")
+      # 
+      # test <- cbi_lsm |> 
+      #   mutate(FireClass = case_when(class == 0 ~ "Unburned",
+      #                                class == 1 ~ "Low_Sev",
+      #                                class == 2 ~ "Mod_Sev",
+      #                                class == 3 ~ "High_Sev")) |> 
+      #   select(plot_id, level, lyr_name, FireClass, value) |> 
+      #   tidyr::pivot_wider(names_from = FireClass, values_from = value) |>
+      #   rowwise() |> 
+      #   mutate(SumFlag = sum(c_across(matches(paste(fire_class, collapse = "|"))), na.rm = T)) |> 
+      #   ungroup() 
+      # 
+      # miss_fire_cols <- fire_class[!fire_class %in% colnames(test)]
+      # 
+      # test <- test %>%
+      #   mutate(
+      #     !!!set_names(
+      #       map(miss_fire_cols, ~ NA),  # Create missing columns with 0
+      #       miss_fire_cols
+      #     )
+      #   ) |> 
+      #   mutate(Unburned = if_else(is.na(Unburned) & ceiling(SumFlag) == 100, 0, Unburned),
+      #          Low_Sev = if_else(is.na(Low_Sev) & ceiling(SumFlag) == 100, 0, Low_Sev),
+      #          Mod_Sev = if_else(is.na(Mod_Sev) & ceiling(SumFlag) == 100, 0, Mod_Sev),
+      #          High_Sev = if_else(is.na(High_Sev) & ceiling(SumFlag) == 100, 0, High_Sev))
+        
+      }
+    } #lscpmet
     
     
   } #Env product CBI Fire
@@ -278,3 +468,92 @@ for(i in 1:length(cbi_files)){
   r.hold <- c(r.hold, ext.r)
   
 }
+
+## Put the internal functions at the bottom
+
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##
+## Subsection: Year of most recent fire
+##
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+## Fire variables
+## Time since fire
+time_to_most_recent_fire <- function(cell_values, years) {
+  # Check if there are any 1s in the cell
+  if (any(cell_values > 0)) {
+    # Find the most recent occurrence of 1 (event) - we look for the last occurrence of 1
+    recent_event_index <- max(which(cell_values > 0), na.rm = TRUE)
+    
+    # Calculate the time since the most recent event (in years)
+    recent_event_year <- years[recent_event_index]
+    time_since_event_value <- as.numeric(max(years) - recent_event_year)  # Get current year and subtract
+  } else {
+    # If no event occurred, return NA
+    time_since_event_value <- max(years) - min(years)
+  }
+  
+  return(time_since_event_value)
+}
+
+
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##
+## Subsection: Fire frequency
+##
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+## Fire freq
+# Create the function to calculate time since the most recent event for each cell
+fire_freq_calc <- function(cell_values, years) {
+  
+  # Check if there are any 1s in the cell
+  if (any(cell_values > 0)) {
+    
+    # Find the most recent occurrence of 1 (event) - we look for the last occurrence of 1
+    fire_years <- years[which(cell_values > 0)]
+    num_fires <- length(fire_years)
+    num_years <- length(years)
+    
+    fire_freq <- num_fires / num_years
+    
+  } else {
+    # If no event occurred, return NA
+    fire_freq <- 0
+  }
+  
+  return(fire_freq)
+}
+
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##
+## Subsection: Fire Return Interval
+##
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+## Create the function to calculate fire return interval
+## Return mean difference in time between fires (assumes yearly data)
+## Returns NA under two conditions: Less than 2 fires produce NA
+fire_return_int <- function(cell_values, years){
+  # Check if there are any 1s in the cell
+  if (any(cell_values > 0)) {
+    
+    # Find the most recent occurrence of 1 (event) - we look for the last occurrence of 1
+    fire_years <- as.numeric(years[which(cell_values > 0)])
+    
+    if(length(fire_years) > 1){
+      # Calculate the average time in-between fire events
+      f_int <- diff(fire_years)
+      ret_int <- mean(f_int)
+    } else {
+      ret_int <- NA
+    }
+  } else {
+    # If no event occurred, return NA
+    #ret_int <- length(years)
+    ret_int <- NA
+  }
+  
+  return(ret_int)
+}
+
