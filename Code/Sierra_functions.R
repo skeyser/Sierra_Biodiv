@@ -279,9 +279,15 @@ ac_det_filter <- function(d,
     d.thresh <- d.thresh |> 
       filter(Cell_Unit %in% eff$Cell_Unit)
     
+    ## Conditionally changing 0 to NA for unsurveyed sites
+    ## Find the same column names
+    eff.sub <- eff[,which(colnames(eff) %in% colnames(d.thresh))]
+    d.thresh[eff.sub == 0] <- NA
+    
   }
   
-  return(list(d.thresh,
+  return(list(sp.dat = d.thresh,
+              eff.dat = eff,
               species = species,
               thresh_scale = thresh_scale,
               thresh_cut = thresh_cut,
@@ -356,7 +362,7 @@ aru_det_file_gen <- function(det_dir = c("C:/Users/srk252/Documents/Rprojs/Sierr
   
   ## User prompts for directory management
   if(occ_format == T & !dir.exists(occ_outdir)){
-    warning("Occupancy output generation selected, but output dir does not exist.")
+    message("Occupancy output generation selected, but output dir does not exist.")
     
     ## User choice...where to create directory...or kill the fxn
     choice <- menu(c("Create an output directory at WD root.", 
@@ -397,7 +403,7 @@ aru_det_file_gen <- function(det_dir = c("C:/Users/srk252/Documents/Rprojs/Sierr
   ## User prompts for directory management
   if(seas_format == T){
     if(!dir.exists(seas_outdir)){
-      warning("Seasonal summary output generation selected, but output dir does not exist.")
+      message("Seasonal summary output generation selected, but output dir does not exist.")
       
       ## User choice...where to create directory...or kill the fxn
       choice <- menu(c("Create an output directory at WD root.", 
@@ -421,8 +427,8 @@ aru_det_file_gen <- function(det_dir = c("C:/Users/srk252/Documents/Rprojs/Sierr
   
   if(seas_format == T){
     if(length(list.files(seas_outdir)) > 0){
-      warning("Seasonal summary output generation select, but output dir has files.")
-      warning("Files in dir:", list.files(seas_outdir, full.names = T))
+      message("Seasonal summary output generation select, but output dir has files.")
+      message("Files in dir:", list.files(seas_outdir, full.names = T))
       
       ## User choice...potentially overwrite existing files...
       choice <- menu(c("Do NOT overwrite. Stop function.",
@@ -510,7 +516,7 @@ aru_det_file_gen <- function(det_dir = c("C:/Users/srk252/Documents/Rprojs/Sierr
       
       ## Take the output from the first list element returned
       ## This is the species DF
-      sp.det.list[[j]] <- filter.tmp[[1]]
+      sp.det.list[[j]] <- filter.tmp$sp.dat
       
       ## filter temp staches the metadata for the function
       names(sp.det.list)[j] <- filter.tmp$species
@@ -528,6 +534,11 @@ aru_det_file_gen <- function(det_dir = c("C:/Users/srk252/Documents/Rprojs/Sierr
                               Survey_Year = lubridate::year(filter.tmp$date_range[1]),
                               NumberDetections = filter.tmp$no_dets,
                               Binarized = filter.tmp$binary)
+      }
+      
+      ## Create metadata file for the subsetted effort file
+      if(j == length(sp.det.files) & eff_file){
+        write.csv(filter.tmp$eff.dat, file = paste0(occ.dir.tmp, yr.tmp, "_OccEffortFileSubset.csv"))
       }
       
     }
