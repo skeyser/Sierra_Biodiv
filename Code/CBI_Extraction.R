@@ -27,6 +27,7 @@ options(scipen = 6, digits = 4)
 
 ## Package Loading
 library(dplyr)
+library(stringr)
 library(ggplot2)
 library(here)
 library(terra)
@@ -55,7 +56,7 @@ aru_locs <- st_as_sf(aru_locs, coords = c("Long", "Lat"), crs = 4326)
 ## Acceptable fire products
 ## fire_interval, most_recent_fire, fire_frequency, number of fires,
 ## and landscape metrics
-aru_env_prep <- function(fire_prod, # character vector of desired fire output
+aru_fire_prep <- function(fire_prod, # character vector of desired fire output
                          aru_locs, # Data.frame with coordinates
                          id_col = "Cell_Unit",
                          year_col = NULL,
@@ -65,7 +66,7 @@ aru_env_prep <- function(fire_prod, # character vector of desired fire output
                          des_out, # desired output
                          spat_ex, # chr for type (point, buff, hex)
                          buff_size = NULL, # vector of buffer sizes
-                         hex_size = NULL,
+                         #hex_size = NULL,
                          intervals = NULL,
                          landscape_metrics = F,
                          ...
@@ -90,7 +91,7 @@ aru_env_prep <- function(fire_prod, # character vector of desired fire output
   
   ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   ##
-  ## Subsection: Create SF object from the ARU coordinates
+  ## Subsection: Create SF objects from the ARU coordinates
   ##
   ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   
@@ -100,8 +101,7 @@ aru_env_prep <- function(fire_prod, # character vector of desired fire output
     aru_locs <- st_as_sf(aru_locs, 
                          coords = c(x_col, 
                                     y_col), 
-                         crs = .crs,
-                         ...)
+                         crs = .crs)
   }
   
   
@@ -112,7 +112,7 @@ aru_env_prep <- function(fire_prod, # character vector of desired fire output
   ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   
   ## Find the data for extraction
-  if(env_prod == "Fire_CBI"){
+  #if(env_prod == "Fire_CBI"){
     
     ## Find files
     cbi_path <- "C:/Users/srk252/Documents/data_for_spencer/cbi_sierra_cat_rasters/"
@@ -183,9 +183,12 @@ aru_env_prep <- function(fire_prod, # character vector of desired fire output
       names(cbi_stack) <- str_extract(cbi_files, "\\d{4}")
     }
     
-    ## If interval grouping for fire
-    ## End goal here is a combine raster stack
-    ## with the intervals aggregated for the CBI data
+    ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    ##
+    ## Subsection: Fire year interval stacking
+    ##
+    ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
     if(!is.null(intervals) & class(intervals) == "character"){
       int_len <- length(intervals)
       seq_list <- vector(mode = "list", length = int_len)
@@ -211,6 +214,7 @@ aru_env_prep <- function(fire_prod, # character vector of desired fire output
           } else {
           cbi_list[[i]] <- app(cbi_tmp, fun = max)
           names(cbi_list[[i]]) <- paste0(names(cbi_tmp)[1], "-", names(cbi_tmp)[length(names(cbi_tmp))])
+          cbi_int <- do.call(c, cbi_list)
         }
       }
     }
@@ -221,31 +225,67 @@ aru_env_prep <- function(fire_prod, # character vector of desired fire output
     
     ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     ##
+    ## Subsection: Fire Severity
+    ##
+    ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    if("fire_severity" %in% fire_prod){
+      if(!is.null(intervals)){
+        message("Intervals set. Fire severity calculated from summarized fire years.")
+        cbi_sev <- cbi_int
+      } else {cbi_sev <- cbi_stack}
+      if(is.null(buff_size)){
+        aru_buffer <- st_buffer(aru_locs,
+                                dist = buff_size)
+        fire_sev <- exactextractr::exact_extract(cbi_sev,
+                                                 aru_buffer,
+                                                 fun = c("mean", "stdev"),
+                                                 append_cols = id_col)
+      } else {
+        fire_sev <- terra::extract(cbi_sev,
+                                   aru_locs,
+                                   bind = T) |> st_as_sf()
+      }
+      colnames(fire_sev)[colnames(fire_sev) != id_col] <- paste0("Fire_Sev_", gsub("[[:punct:]]", "_", colnames(fire_sev)[colnames(fire_sev) != id_col]))
+      
+    }
+    
+    
+    ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    ##
     ## Subsection: Calculate fire variables
     ##
     ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     years <- as.numeric(names(cbi_stack))
     
     if("time_since_fire" %in% fire_prod){
+      if(!is.null(intervals)){
+        message("Intervals are set. Time since fire doesn't accept intervals...output will be for single years.")
+        } else {
       ## Time to most recent fire
       time_since_fire <- terra::app(cbi_stack, 
                                     fun = function(x) time_to_most_recent_fire(cell_values = x,
                                                                                years = years))
-    }
+    }}
     
     if("fire_freq" %in% fire_prod){
+      if(!is.null(intervals)){
+        message("Intervals are set. Fire frequency doesn't accept intervals.")
+      } else {
       ## Fire frequency (num fires/total record length)
       fire_freq <- terra::app(cbi_stack, 
                               fun = function(x) fire_freq_calc(cell_values = x,
                                                                years = years))
-    }
+    }}
     
     if("fire_ret_int" %in% fire_prod){
+      if(!is.null(intervals)){
+        message("Intervals are set. Fire return interval doesn't accept intervals.")
+      } else {
       ## Fire return interval (mean of time between successive fires)
       fire_return_int <- terra::app(cbi_stack, 
                                     fun = function(x) fire_return_int(cell_values = x, 
                                                                       years = years))
-    }
+    }}
     
     ## Report the status of s2 geometry for convenience
     if(!is.null(buffer_size)){
@@ -255,6 +295,7 @@ aru_env_prep <- function(fire_prod, # character vector of desired fire output
         print("s2 disabled, if locations are geodetic (lat/lon) units interpretted as degrees.")
       }
     }
+    
     
     ## Buffer extraction code from Jay (tidy code)
     ## Retrieve variable names from the
@@ -329,17 +370,25 @@ aru_env_prep <- function(fire_prod, # character vector of desired fire output
         }
         
       }
+      fire_buff_merge <- Reduce(function(x, y) merge(x, y, by = id_col), fire_buff_out) 
     }
     
     ## Block for what to do with CBI Fire Data
     if(landscape_metrics == TRUE){
-      if(is.null(buff_size) | is.null(hex_size)){
+      if(is.null(buff_size)){ #| is.null(hex_size)){
         if(!is.null(id_col) & any(str_detect(class(aru_locs), "sf"))){
           id.v <- as.vector(unlist(st_drop_geometry(aru_locs[, id_col])))
         } else {
           id.v <- NULL
         }
-      cbi_lsm <- landscapemetrics::sample_lsm(landscape = cbi_stack,
+        if(!is.null(intervals)){ 
+          message("Landscapemetrics done for individual years.")
+          cbi_lcpc <- cbi_stack 
+        } else { 
+          cbi_lcpc <- cbi_int
+          message("Landscapemetrics done for intervals.")
+        }
+      cbi_lsm <- landscapemetrics::sample_lsm(landscape = cbi_lcpc,
                                               y = aru_locs,
                                               plot_id = id.v,
                                               shape = "circle",
@@ -359,7 +408,7 @@ aru_env_prep <- function(fire_prod, # character vector of desired fire output
                                               progress = T)
       
       ## Fix layer names
-      lyr_map <- data.frame(layer = 1:nlyr(cbi_stack), lyr_name = names(cbi_stack))
+      lyr_map <- data.frame(layer = 1:nlyr(cbi_lcpc), lyr_name = names(cbi_lcpc))
       
       ## Merge these
       cbi_lsm <- left_join(cbi_lsm, lyr_map)
@@ -451,26 +500,21 @@ aru_env_prep <- function(fire_prod, # character vector of desired fire output
     } #lscpmet
     
     
-  } #Env product CBI Fire
+  #} #Env product CBI Fire
   
-  
+  return(list(FireMetrics = fire_buff_merge,
+              FireLscp = cbi_lsm
+              ))
   
 } ## function closure
 
+## Test it
 
-## Scratch code
-## Delete afterwards
-r.hold <- c()
-for(i in 1:length(cbi_files)){
-  print(cbi_files[i])
-  r <- rast(cbi_files[i])
-  ext.r <- ext(r)
-  r.hold <- c(r.hold, ext.r)
-  
-}
-
-## Put the internal functions at the bottom
-
+## -------------------------------------------------------------
+##
+## Begin Section: Fire Functions
+##
+## -------------------------------------------------------------
 ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ##
 ## Subsection: Year of most recent fire
