@@ -168,21 +168,106 @@ for (i in 1:nrow(eff.days)) {
 # Print the modified 3D array
 print(y)
 
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##
+## Subsection: We want to handle these NAs more explicitly.
+##
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+## *************************************************************
+##
+## Section Notes:
+## We want a way to skip the pesky NAs that comprise ~30% of the
+## data and will inevitably slow the model down. The solution
+## is to link the data only the the sites with sampling effort
+## and skip the NAs. Because the ARUs don't sample at a given site
+## this creates a similar scheme for all species and can be handled
+## for one species and attributed to all remaining species.
+##
+## *************************************************************
+
+## One slice of the species matrix
+y_sub <- y[,,1]
+
+## Find the indices with NAs
+has_data <- which(
+  !is.na(y_sub),
+  arr.ind = T
+)
+
+## Make the covariates into long format
+obs_cov_long <- matrix(
+  NA,
+  nrow(has_data),
+  ncol = 3
+)
+
+## Place the correct data into the new long format
+eff.hrs <- as.matrix(eff.hrs)
+eff.days <- as.matrix(eff.days)
+eff.jday <- as.matrix(eff.jday)
+
+## Make these in long format
+for(i in 1:nrow(has_data)){
+  obs_cov_long[i,1] <- eff.hrs[
+    has_data[i,1], # site
+    #1,
+    has_data[i,2] # rep
+  ]
+  
+  obs_cov_long[i,2] <- eff.days[
+    has_data[i,1], # site
+    #1,
+    has_data[i,2] # rep
+  ]
+  
+  obs_cov_long[i,3] <- eff.jday[
+    has_data[i,1], # site
+    #1,
+    has_data[i,2] # rep
+  ]
+  
+}
+
+head(obs_cov_long)
+
 ## Using body mass as a detection covariate
 
 
 
 ## Scale the detection covariates
-{
-eff.hrs <- scale(eff.hrs)
-attr(eff.hrs, "scaled:center") <- NULL
-attr(eff.hrs, "scaled:scale") <- NULL
+eff.hrs <- obs_cov_long[,1]
+mean.eff.hrs <- mean(eff.hrs)
+sd.eff.hrs <- sd(eff.hrs)
+eff.hrs.scale <- (eff.hrs - mean.eff.hrs) / sd.eff.hrs
 
-eff.days <- scale(eff.days)
-attr(eff.days, "scaled:center") <- NULL
-attr(eff.days, "scaled:scale") <- NULL
-}
+eff.days <- obs_cov_long[,2]
+mean.eff.days <- mean(eff.days)
+sd.eff.days <- sd(eff.days)
+eff.days.scale <- (eff.days - mean.eff.days) / sd.eff.days
+
+eff.jday <- obs_cov_long[,3]
+mean.eff.jday <- mean(eff.jday)
+sd.eff.jday <- sd(eff.jday)
+eff.jday.scale <- (eff.jday - mean.eff.jday) / sd.eff.jday
+
+# {
+# eff.hrs <- scale(eff.hrs)
+# attr(eff.hrs, "scaled:center") <- NULL
+# attr(eff.hrs, "scaled:scale") <- NULL
+# 
+# eff.days <- scale(eff.days)
+# attr(eff.days, "scaled:center") <- NULL
+# attr(eff.days, "scaled:scale") <- NULL
+# }
 #eff.jday <- as.matrix(scale(unlist(eff.))
+
+## Make the response variable in long format
+y_long <- matrix(data = NA, nrow = length(y_sub[!is.na(y_sub)]), ncol = dim(y)[3])
+for(i in 1:dim(y)[3]){
+  y.tmp <- y[,,i]
+  y_long[,i] <- y.tmp[!is.na(y.tmp)]
+}
+
 ## -------------------------------------------------------------
 ##
 ## Begin Section: Occupancy Covariates
@@ -245,6 +330,44 @@ win.data <- list(y = y,
              cc = cc
              )
 str(win.data)
+
+## Win data new
+win.data.new <- list(y = y_long,
+                     nsite = dim(y)[1],
+                     N = nrow(y_long),
+                     nspec = ncol(y_long),
+                     site_id = has_data[,1],
+                     eff.hrs = eff.hrs.scale,
+                     eff.jday = eff.jday.scale,
+                     utmn = utmn,
+                     ele = ele,
+                     ppt = ppt,
+                     tmx = tmx,
+                     cbi1 = cbi1,
+                     cbi2_5 = cbi2_5,
+                     cbi6_10 = cbi6_10,
+                     cbi11_35 = cbi11_35,
+                     stage = stage,
+                     cc = cc
+                     )
+str(win.data.new)
+#                  nrep = dim(y)[2],
+#                  nspec = dim(y)[3],
+#                  eff.days = eff.days,
+#                  eff.hrs = eff.hrs,
+#                  utmn = utmn,
+#                  ele = ele,
+#                  ppt = ppt,
+#                  tmx = tmx,
+#                  cbi1 = cbi1,
+#                  cbi2_5 = cbi2_5,
+#                  cbi6_10 = cbi6_10,
+#                  cbi11_35 = cbi11_35,
+#                  stage = stage,
+#                  cc = cc
+# )
+
+
 ## -------------------------------------------------------------
 ##
 ## End Section:
