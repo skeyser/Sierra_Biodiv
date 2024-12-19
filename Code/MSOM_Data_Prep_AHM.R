@@ -380,7 +380,7 @@ str(win.data.rag)
 ##
 ## -------------------------------------------------------------
 
-to_keep <- c("win.data.new")
+to_keep <- c("y", "y_long", "win.data.rag")
 to_remove <- setdiff(ls(), to_keep)
 
 rm(list = to_remove)

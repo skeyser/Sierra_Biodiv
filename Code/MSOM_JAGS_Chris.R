@@ -33,6 +33,9 @@ library(rjags)
 library(MCMCvis)
 ## -------------------------------------------------------------
 
+## Load the data
+load(here("./Data/JAGS_Data/MSOM_Ragged_2021.RData"))
+
 ## -------------------------------------------------------------
 ##
 ## Begin Section: JAGS Model Code
@@ -45,7 +48,7 @@ library(MCMCvis)
 ##
 ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-sink("Sierra_MSOM_Covs_NA.txt")
+sink("Code/JAGS_Models/Sierra_MSOM_Covs_NA.txt")
 cat("
     model {
     
@@ -263,6 +266,8 @@ sink()
 ##
 ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+nspec <- win.data.rag$nspec
+
 ## Initial values for model
 ## Zst 1 if even recorded, 0 otherwise
 zst <- apply(y, c(1,3), function(x) max(x, na.rm = T))
@@ -367,10 +372,10 @@ nc <- 3
 # rm(list = to_remove)
 
 ## Running the model
-out2 <- jags(data = win.data.new,
+out2 <- jags(data = win.data.rag,
              inits = inits,
              params1,
-             "Sierra_MSOM_Covs_NA.txt",
+             "Code/JAGS_Models/Sierra_MSOM_Covs_NA.txt",
              n.chains = nc,
              n.thin = nt,
              n.iter = ni,
@@ -416,8 +421,8 @@ K <- 91
 
 # J number of rep
 # Covariates
-eff.hrs <- win.data.new$eff.hrs
-eff.jday <- win.data.new$eff.jday
+eff.hrs <- win.data.rag$eff.hrs
+eff.jday <- win.data.rag$eff.jday
 J <- length(eff.hrs)
 
 # Species random intercept
