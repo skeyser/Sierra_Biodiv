@@ -113,16 +113,6 @@ cat("
     tau.beta3 <- pow(sd.beta3, -2)
     sd.beta3 ~ dunif(0,4)
     
-    # Precip
-    #mu.beta4 ~ dnorm(0,0.1)
-    #tau.beta4 <- pow(sd.beta4, -2)
-    #sd.beta4 ~ dunif(0,4)
-    
-    # Max T
-    #mu.beta5 ~ dnorm(0,0.1)
-    #tau.beta5 <- pow(sd.beta5, -2)
-    #sd.beta5 ~ dunif(0,4)
-    
     # Fire Sev 1yr
     mu.beta4 ~ dnorm(0,0.1)
     tau.beta4 <- pow(sd.beta4, -2)
@@ -183,11 +173,21 @@ cat("
     for(k in 1:nspec){ #species loop
       for(i in 1:nsite){ #site loop
       # Occupancy model w/ covs
+      # Covs: Lat, Elevation, Elevation^2, Prop Burn Sev (PBS) 1yr, PBS 2-5, PBD 6-10, PBS 11-35, Stand Age, % Canopy Cover  
       logit(psi[i,k]) <- lpsi[k] + beta1[k] * utmn[i] + beta2[k] * ele[i] + beta3[k] * pow(ele[i], 2) + beta4[k] * cbi1[i] + beta5[k] * cbi2_5[i] + beta6[k] * cbi6_10[i] +
         beta7[k] * cbi11_35[i] + beta8[k] * stage[i] + beta9[k] * cc[i] 
       
       # True latent state (Z-matrix)
-      z[i,k] ~ dbern(psi[i,k]) 
+      z[i,k] ~ dbern(psi[i,k])
+      
+      # Model Assement via Chi-squared GoF
+      evalZ[i,k] <- psi[i,k]
+      EZ[i,k] <- pow((z[i,k] - evalZ[i,k]), 2) / (evalZ[i,k] + 0.5)
+        
+      # Replicated data for new comparison
+      z.new[i,k] ~ dbern(psi[i,k])
+      EZ.new[i,k] <- pow((z.new[i,k] - evalZ[i,k]), 2) / (evalZ[i,k] + 0.5)
+      
       }
     }
     
@@ -199,16 +199,26 @@ cat("
     
     # Significant NAs in the response for variable ARU start dates
     # Detection heterogeneity is built into this model
+    # Detection Covs: Survey Hrs (sum across 6 day secondary sampling), Jdate (median per 6 day interval), Jdate^2
     for(k in 1:nspec){ #columns y 
       for(j in 1:N){ # rows y
         # Detection model on logit scale
         logit(p[j,k]) <- lp[k] + alpha1[k] * eff.hrs[j] + alpha2[k] * eff.jday[j] + alpha3[k] * pow(eff.jday[j], 2)
           
-        # Latent state and detection 
+        # Latent state and detection
+        # Site_id nested index
         mup[j,k] <- z[site_id[j], k] * p[j,k]
           
         # Observation Bernoulli draw from z*p
         y[j,k] ~ dbern(mup[j,k])
+        
+        # Model Assement via Chi-squared GoF
+        eval[j,k] <- mup[j,k]
+        E[j,k] <- pow((y[j,k] - eval[j,k]), 2) / (eval[j,k] + 0.5)
+        
+        # Replicated data for new comparison
+        y.new[j,k] ~ dbern(mup[j,k])
+        E.new[j,k] <- pow((y.new[j,k] - eval[j,k]), 2) / (eval[j,k] + 0.5)
 
       }
     }
@@ -225,6 +235,11 @@ cat("
     for(i in 1:nsite){
       Nsite[i] <- sum(z[i,])
     }
+    
+    fitZ <- sum(EZ[,])
+    fitZ.new <- sum(EZ.new[,])
+    fitY <- sum(E[,])
+    fitY.new <- sum(E.new[,])
     
     }
     ", fill = TRUE)
@@ -249,6 +264,7 @@ sink()
 ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 ## Initial values for model
+## Zst 1 if even recorded, 0 otherwise
 zst <- apply(y, c(1,3), function(x) max(x, na.rm = T))
 colnames(zst) <- NULL
 inits <- function() list(z = zst, 
@@ -256,14 +272,12 @@ inits <- function() list(z = zst,
                          beta1 = rep(0, nspec),
                          beta2 = rep(0, nspec),
                          beta3 = rep(0, nspec),
-                         #beta4 = rep(0, nspec),
-                         #beta5 = rep(0, nspec),
+                         beta4 = rep(0, nspec),
+                         beta5 = rep(0, nspec),
                          beta6 = rep(0, nspec),
                          beta7 = rep(0, nspec),
                          beta8 = rep(0, nspec),
                          beta9 = rep(0, nspec),
-                         beta10 = rep(0, nspec),
-                         beta11 = rep(0, nspec),
                          lp = rep(0.5, nspec),
                          alpha1 = rep(0, nspec),
                          alpha2 = rep(0, nspec),
@@ -278,40 +292,8 @@ params1 <- c("mu.lpsi",
              "sd.beta2",
              "mu.beta3",
              "sd.beta3",
-             # "mu.beta4",
-             # "sd.beta4",
-             # "mu.beta5",
-             # "sd.beta5",
-             "mu.beta6",
-             "sd.beta6",
-             "mu.beta7",
-             "sd.beta7",
-             "mu.beta8",
-             "sd.beta8",
-             "mu.beta9",
-             "sd.beta9",
-             "mu.beta10",
-             "sd.beta10",
-             "mu.beta11",
-             "sd.beta11",
-             "mu.lp",
-             "sd.lp",
-             "mu.alpha1",
-             "sd.alpha1",
-             "mu.alpha2",
-             "sd.alpha2",
-             "Ntotal",
-             "Nsite")
-params2 <- c("mu.lpsi",
-             "sd.lpsi",
-             "mu.beta1",
-             "sd.beta1",
-             "mu.beta2",
-             "sd.beta2",
-             # "mu.beta3",
-             # "sd.beta3",
-             # "mu.beta4",
-             # "sd.beta4",
+             "mu.beta4",
+             "sd.beta4",
              "mu.beta5",
              "sd.beta5",
              "mu.beta6",
@@ -322,39 +304,67 @@ params2 <- c("mu.lpsi",
              "sd.beta8",
              "mu.beta9",
              "sd.beta9",
-             "mu.beta10",
-             "sd.beta10",
-             "mu.beta11",
-             "sd.beta11",
-             "lpsi",
-             "beta1",
-             "beta2",
-             "beta3",
-             "beta4",
-             "beta5",
-             "beta6",
-             "beta7",
-             "beta8",
-             "beta9",
-             "beta10",
-             "beta11",
-             "lp",
-             "alpha1",
-             "alpha2",
-             "z")
+             "mu.lp",
+             "sd.lp",
+             "mu.alpha1",
+             "sd.alpha1",
+             "mu.alpha2",
+             "sd.alpha2",
+             "mu.alpha3",
+             "sd.alpha3",
+             "Ntotal",
+             "Nsite",
+             "fitZ",
+             "fitZ.new",
+             "fitY",
+             "fitY.new")
+# params2 <- c("mu.lpsi",
+#              "sd.lpsi",
+#              "mu.beta1",
+#              "sd.beta1",
+#              "mu.beta2",
+#              "sd.beta2",
+#              "mu.beta3",
+#              "sd.beta3",
+#              "mu.beta4",
+#              "sd.beta4",
+#              "mu.beta5",
+#              "sd.beta5",
+#              "mu.beta6",
+#              "sd.beta6",
+#              "mu.beta7",
+#              "sd.beta7",
+#              "mu.beta8",
+#              "sd.beta8",
+#              "mu.beta9",
+#              "sd.beta9",
+#              "lpsi",
+#              "beta1",
+#              "beta2",
+#              "beta3",
+#              "beta4",
+#              "beta5",
+#              "beta6",
+#              "beta7",
+#              "beta8",
+#              "beta9",
+#              "lp",
+#              "alpha1",
+#              "alpha2",
+#              "z")
 
 ## Settings for the MCMC
-ni <- 1000
-nt <- 2
-nb <- 200
+ni <- 10000
+nt <- 10
+nb <- 1000
 nc <- 3
 
 ## to keep
-to_keep <- c("out2", "out3", "nsite", "nspec", "aru_meta", "sp.names", "win.data", 
-             "cbi1", "cbi2_5", "cbi6_10", "cbi11_35", "ele", "stage", "cc", "tmx", "ppt", "utmn", "eff.hrs", "eff.days")
-to_remove <- setdiff(ls(), to_keep)
-
-rm(list = to_remove)
+# to_keep <- c("out2", "out3", "nsite", "nspec", "aru_meta", "sp.names", "win.data", 
+#              "cbi1", "cbi2_5", "cbi6_10", "cbi11_35", "ele", "stage", "cc", "utmn", "eff.hrs", "eff.days")
+# to_remove <- setdiff(ls(), to_keep)
+# 
+# rm(list = to_remove)
 
 ## Running the model
 out2 <- jags(data = win.data.new,
@@ -365,17 +375,17 @@ out2 <- jags(data = win.data.new,
              n.thin = nt,
              n.iter = ni,
              n.burnin = nb,
-             parallel = T)
+             parallel = TRUE)
 
-out3 <- jags.basic(win.data.new, 
-                   inits, 
-                   params2, 
-                   "Sierra_MSOM_Covs_NA.txt", 
-                   n.chains = nc,
-                   n.thin = nt, 
-                   n.iter = ni, 
-                   n.burnin = nb, 
-                   parallel = TRUE)
+# out3 <- jags.basic(win.data.new, 
+#                    inits, 
+#                    params2, 
+#                    "Sierra_MSOM_Covs_NA.txt", 
+#                    n.chains = nc,
+#                    n.thin = nt, 
+#                    n.iter = ni, 
+#                    n.burnin = nb, 
+#                    parallel = TRUE)
 
 
 ## -------------------------------------------------------------
@@ -383,6 +393,98 @@ out3 <- jags.basic(win.data.new,
 ## End Section: JAGS Model Runs
 ##
 ## -------------------------------------------------------------
+
+## -------------------------------------------------------------
+##
+## Begin Section: Prior Predictive Checks
+##
+## -------------------------------------------------------------
+
+sd.lpsi <- runif(1000, 0, 4) 
+hist(sd.lpsi, breaks = 50)
+tau.lpsi <- sd.lpsi^-2
+hist(tau.lpsi, breaks = 10)
+mu.lpsi <- rnorm(1000, 0, 0.1)
+hist(mu.lpsi, breaks = 50)
+lpsi <- rnorm(1000, mu.lpsi, 1/tau.lpsi)
+quantile(lpsi, probs = seq(0,1, by = .05))
+hist(lpsi, breaks = 50)
+
+# Detection submodel
+# Number of species
+K <- 91
+
+# J number of rep
+# Covariates
+eff.hrs <- win.data.new$eff.hrs
+eff.jday <- win.data.new$eff.jday
+J <- length(eff.hrs)
+
+# Species random intercept
+sd.lp <- runif(K, 0, 2)
+tau.lp <- sd.lp^-2
+mu.lp <- rnorm(K, 0, 1/0.01) #convert precision to SD 
+
+## Random intercept per species
+lp <- rnorm(mu.lp, 1/tau.lp)
+
+# Species random slope
+# Alpha 1
+sd.alpha1 <- runif(K, 0, 2)
+tau.alpha1 <- sd.alpha1^-2
+mu.alpha1 <- rnorm(K, 0, 1/0.01)
+hist(mu.alpha1)
+
+# Random slope
+alpha1 <- rnorm(mu.alpha1, 1/tau.alpha1)
+
+# Alpha 2
+sd.alpha2 <- runif(K, 0, 2)
+tau.alpha2 <- sd.alpha2^-2
+mu.alpha2 <- rnorm(K, 0, 1/0.01)
+hist(mu.alpha2)
+
+# Random slope
+alpha2 <- rnorm(mu.alpha2, 1/tau.alpha2)
+
+# Alpha 3
+sd.alpha3 <- runif(K, 0, 2)
+tau.alpha3 <- sd.alpha3^-2
+mu.alpha3 <- rnorm(K, 0, 1/0.01)
+hist(mu.alpha3)
+
+# Random slope
+alpha3 <- rnorm(mu.alpha3, 1/tau.alpha3)
+
+## Estimate prior distribution of detection probability from random draws
+p <- matrix(NA, nrow = J, ncol = K)
+
+for(k in 1:K){
+  for(j in 1:J){
+    p[j,k] <- plogis(lp[k] + alpha1[k] * eff.hrs[j] + alpha2[k] * eff.jday[j] + alpha3[k] * eff.jday[j]^2)
+  }
+}
+
+## Prior estimates of detection probability per species 
+hist(p)
+
+## -------------------------------------------------------------
+##
+## Begin Section: Posterior Predictive Checks
+##
+## -------------------------------------------------------------
+out2
+summary(out2)
+pp.check(out2, observed = 'fitY', simulated = 'fitY.new')
+pp.check(out2, observed = 'fitZ', simulated = 'fitZ.new')
+
+
+
+## *************************************************************
+##
+## Section Notes: Code below has not been updated!!!
+##
+## *************************************************************
 
 ## -------------------------------------------------------------
 ##
