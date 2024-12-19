@@ -312,27 +312,27 @@ cc <- as.vector(scale(aru_meta$cpycovr_f3_mn))
 ## -------------------------------------------------------------
 
 dimnames(y) <- NULL
-win.data <- list(y = y, 
-             nsite = dim(y)[1],
-             nrep = dim(y)[2],
-             nspec = dim(y)[3],
-             eff.days = eff.days,
-             eff.hrs = eff.hrs,
-             utmn = utmn,
-             ele = ele,
-             ppt = ppt,
-             tmx = tmx,
-             cbi1 = cbi1,
-             cbi2_5 = cbi2_5,
-             cbi6_10 = cbi6_10,
-             cbi11_35 = cbi11_35,
-             stage = stage,
-             cc = cc
-             )
-str(win.data)
+# win.data <- list(y = y, 
+#              nsite = dim(y)[1],
+#              nrep = dim(y)[2],
+#              nspec = dim(y)[3],
+#              eff.days = eff.days,
+#              eff.hrs = eff.hrs,
+#              utmn = utmn,
+#              ele = ele,
+#              ppt = ppt,
+#              tmx = tmx,
+#              cbi1 = cbi1,
+#              cbi2_5 = cbi2_5,
+#              cbi6_10 = cbi6_10,
+#              cbi11_35 = cbi11_35,
+#              stage = stage,
+#              cc = cc
+#              )
+# str(win.data)
 
 ## Win data new
-win.data.new <- list(y = y_long,
+win.data.rag <- list(y = y_long,
                      nsite = dim(y)[1],
                      N = nrow(y_long),
                      nspec = ncol(y_long),
@@ -350,7 +350,7 @@ win.data.new <- list(y = y_long,
                      stage = stage,
                      cc = cc
                      )
-str(win.data.new)
+str(win.data.rag)
 #                  nrep = dim(y)[2],
 #                  nspec = dim(y)[3],
 #                  eff.days = eff.days,
@@ -374,116 +374,17 @@ str(win.data.new)
 ##
 ## -------------------------------------------------------------
 
+## -------------------------------------------------------------
+##
+## Begin Section: Cleaning file and saving .RDATA
+##
+## -------------------------------------------------------------
 
-sp.det <- lapply(sp.det.list.r, function(x) x |> select(all_of(samp.cols)))
-y <- array(unlist(lapply(sp.det, as.matrix)), dim = c(nsite, nrep, nspec))
-dimnames(y) <- list(NULL, NULL, names(sp.det.list))
+to_keep <- c("win.data.new")
+to_remove <- setdiff(ls(), to_keep)
 
-## No NAs present in the data
-table(nsurveys <- apply(y[,,1], 1, function(x) sum(!is.na(x))))
+rm(list = to_remove)
+rm(to_remove)
 
-## Species with 0 occurrences
-## 9 species
-tmp <- apply(y, c(1,3), max, na.rm = TRUE)
-tmp[tmp == -Inf] <- NA
-sort(obs.occ <- apply(tmp, 2, sum, na.rm = TRUE))
-
-drop.sp <- which(obs.occ == 0)
-y <- y[,,-drop.sp]
-dimnames(y)
-
-## Redefine nspec
-nspec <- dim(y)[3]
-
-# Get observed number of species per site
-tmp <- apply(y, c(1,3), max, na.rm = TRUE)
-tmp[tmp == "-Inf"] <- NA
-sort(C <- apply(tmp, 1, sum)) # Compute and print sorted species counts
-
-## We have an average of 20 species detected across the sites
-plot(table(C), xlim = c(0, 60), xlab = "Observed number of species", ylab = "Number of
-     quadrats", frame = F)
-abline(v = mean(C, na.rm = TRUE), col = "blue", lwd = 3)
-
-## Generate the NA data
-ysum <- apply(y, c(1,3), sum, na.rm = T)
-
-## Let's try a really simple model
-win.data <- list(ysum = ysum, M = nrow(ysum), 
-                 J = ,
-                 nspec = dim(ysum)[2])
-
-# Specify model in BUGS language
-sink("model5.txt")
-cat("
-model {
-# Priors
-for(k in 1:nspec){ # Loop over species
-psi[k] ~ dunif(0, 1)
-p[k] ~ dunif(0, 1)
-}
-# Ecological model for latent occurrence z (process model)
-for(k in 1:nspec){ # Loop over species
-for (i in 1:M) { # Loop over sites
-z[i,k] ~ dbern(psi[k])
-}
-}
-# Observation model for observed data ysum
-for(k in 1:nspec){ # Loop over species
-for (i in 1:M) {
-mup[i,k] <- z[i,k] * p[k]
-ysum[i,k] ~ dbin(mup[i,k], J[i])
-}
-}
-# Derived quantities
-for(k in 1:nspec){ # Loop over species
-Nocc.fs[k] <- sum(z[,k]) # Add up number of occupied sites among the 267
-}
-for (i in 1:M) { # Loop over sites
-Nsite[i] <- sum(z[i,]) # Add up number of occurring species at each site
-}
-}
-",fill = TRUE)
-sink()
-
-# Initial values
-zst <- apply(y, c(1,3), max) # Observed occurrence as inits for z
-zst[is.na(zst)] <- 1
-inits <- function() list(z = zst, psi = rep(0.4, nspec), p = rep(0.4, nspec))
-# Parameters monitored
-params <- c("psi", "p", "Nsite", "Nocc.fs")
-
-# MCMC settings
-ni <- 2500 ; nt <- 2 ; nb <- 500 ; nc <- 3
-# Call JAGS from R (ART 2.1 min)
-out5 <- jags(win.data, inits, params, "model5.txt", n.chains = nc, n.thin = nt,
-             n.iter = ni, n.burnin = nb, parallel = TRUE)
-par(mfrow = c(4,4)) ; traceplot(out5) ; print(out5, dig = 3)
-
-
-# and in a plot
-cbind(obs.occu = obs.occ, out5$summary[which(str_detect(rownames(out5$summary), "Nsite")), c(1,3,7)])
-plot(obs.occ, out5$summary[558:702, 1], xlab = "Observed number of occupied sites",
-     ylab = "Estimated version of quantity", ylim = c(0, 267), frame = F, pch = 16)
-abline(0,1)
-segments(obs.occ, out5$summary[558:702,3], obs.occ, out5$summary[558:702,7], col
-         = "grey", lwd = 2)
-
-
-plot(out5$summary[1:92,1], out5$summary[93:184,1], xlab = "Occupancy estimate",
-     ylab = "Detection estimate", xlim = c(0,1), ylim = c(0,1), frame = F, pch = 16)
-segments(out5$summary[1:92,3], out5$summary[93:184,1], out5$summary[1:92,7],
-         out5$summary[93:184,1], col = "grey", lwd = 2)
-segments(out5$summary[1:92,1], out5$summary[93:184,3], out5$summary[1:92,1],
-         out5$summary[93:184,7], col = "grey", lwd = 2)
-## Looking at the posterior
-rich.df <- data.frame(mnN = out5$mean$Nsite,
-                      lN = out5$q2.5$Nsite,
-                      uN = out5$q97.5$Nsite,
-                      obsN = apply(apply(y, c(1,3), max), 1, sum))
-
-ggplot(data = rich.df) + 
-  geom_point(aes(x = obsN, y = mnN)) +
-  geom_errorbar(aes(ymin = lN, ymax = uN)) + 
-  geom_abline(slope = 1) + 
-  theme_bw()
+## Save the RDATA
+save.image(file = here("./Data/JAGS_Data/MSOM_Ragged_2021.RData"))
