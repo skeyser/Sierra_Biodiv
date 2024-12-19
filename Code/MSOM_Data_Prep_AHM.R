@@ -170,7 +170,7 @@ print(y)
 
 ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ##
-## Subsection: We want to handle these NAs more explicitly.
+## Subsection: "Ragged array" data input for skipping NAs
 ##
 ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ## *************************************************************
