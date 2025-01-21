@@ -356,6 +356,7 @@ params1 <- c("mu.lpsi",
 #              "lp",
 #              "alpha1",
 #              "alpha2",
+#              "alpha3",
 #              "z")
 
 ## Settings for the MCMC
