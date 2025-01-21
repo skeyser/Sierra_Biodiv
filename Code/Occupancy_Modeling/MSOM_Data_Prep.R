@@ -111,6 +111,9 @@ sort(obs.occ <- apply(tmp, 2, sum, na.rm = TRUE))
 drop.sp <- which(obs.occ == 0)
 y <- y[,,-drop.sp]
 sp.names <- dimnames(y)
+sp.df <- data.frame(Index = 1:length(sp.names[[3]]),
+                    Species = sp.names[[3]])
+#write.csv(sp.df, file = here::here("Code/Occupancy_Modeling/SpeciesIndex.csv"))
 
 ## Redefine nspec
 nspec <- dim(y)[3]
