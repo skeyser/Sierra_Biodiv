@@ -40,7 +40,15 @@ library(abind)
 ## -------------------------------------------------------------
 
 ## Load in the bird data for 2021
-load(here("./Data/Generated_DFs/Occ_Mod_Data/2021_OccSppList.RData"))
+load(here("./Data/Generated_DFs/Occ_Mod_Data/95_Thresh_Cutoff/2021_OccSppList.RData"))
+
+## ADDED removing species and name change for PACFLY
+sp.det.list <- sp.det.list[which(!names(sp.det.list) %in% c("Red-tailed Hawk",
+                                                            "Osprey",
+                                                            "Red-shouldered Hawk",
+                                                            "Clark's Nutcracker"))]
+
+names(sp.det.list)[which(names(sp.det.list) == "Pacific-slope Flycatcher")] <- "Western Flycatcher"
 
 ## Cell Unit mapping file
 cu.map <- data.frame(ID = 1:length(sp.det.list[[1]]$Cell_Unit), Cell_Unit = sp.det.list[[1]]$Cell_Unit)
@@ -130,8 +138,20 @@ sort(C <- apply(tmp, 1, sum)) # Compute and print sorted species counts
 ##
 ## -------------------------------------------------------------
 
+## Morphological Characteristics
+morph <- read.csv("Data/SierraBirds_Mass_Beak_PCA.csv")
+morph <- morph |> 
+  filter(Com_Name %in% sp.names[[3]]) |> 
+  arrange(match(Com_Name, sp.names[[3]]))
+
+bm <- morph$Mass
+blc <- morph$Beak_Length_Culmen
+bd <- morph$Beak_Depth
+pc1 <- morph$PCA1
+pc2 <- morph$PCA2
+
 ## Get the number of hours per survey for the detection covariate
-eff.dat <- read.csv(here("./Data/Generated_DFs/Occ_Mod_Data/2021_OccEffortFileSubset.csv"))
+eff.dat <- read.csv(here("./Data/Generated_DFs/Occ_Mod_Data/95_Thresh_Cutoff/2021_OccEffortFileSubset.csv"))
 eff.dat <- eff.dat[,-1]
 colnames(eff.dat) <- gsub("[[:punct:]]", "_", gsub("X", "", colnames(eff.dat)))
 
@@ -253,6 +273,11 @@ mean.eff.jday <- mean(eff.jday)
 sd.eff.jday <- sd(eff.jday)
 eff.jday.scale <- (eff.jday - mean.eff.jday) / sd.eff.jday
 
+## Species-level traits
+mean.bm <- mean(log(bm))
+sd.bm <- sd(log(bm))
+bm.scale <- (log(bm) - mean.bm) / sd.bm
+
 # {
 # eff.hrs <- scale(eff.hrs)
 # attr(eff.hrs, "scaled:center") <- NULL
@@ -342,6 +367,9 @@ win.data.rag <- list(y = y_long,
                      site_id = has_data[,1],
                      eff.hrs = eff.hrs.scale,
                      eff.jday = eff.jday.scale,
+                     bmass = bm.scale,
+                     beak.pc1 = pc1,
+                     beak.pc2 = pc2,
                      utmn = utmn,
                      ele = ele,
                      ppt = ppt,
@@ -390,4 +418,4 @@ rm(list = to_remove)
 rm(to_remove)
 
 ## Save the RDATA
-save.image(file = here("./Data/JAGS_Data/MSOM_Ragged_2021.RData"))
+save.image(file = here("./Data/JAGS_Data/MSOM_Ragged_2021_95cut.RData"))
