@@ -48,7 +48,7 @@ load(here("./Data/JAGS_Data/MSOM_Ragged_2021_95cut.RData"))
 ##
 ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-sink("Code/JAGS_Models/Sierra_MSOM_Covs_NA.txt")
+sink("Code/JAGS_Models/Sierra_MSOM_Covs_NA_95_BM.txt")
 cat("
     model {
     
@@ -384,7 +384,7 @@ nc <- 3
 out2 <- jags(data = win.data.rag,
              inits = inits,
              params1,
-             "Code/JAGS_Models/Sierra_MSOM_Covs_NA.txt",
+             "Code/JAGS_Models/Sierra_MSOM_Covs_NA_95_BM.txt",
              n.chains = nc,
              n.thin = nt,
              n.iter = ni,
