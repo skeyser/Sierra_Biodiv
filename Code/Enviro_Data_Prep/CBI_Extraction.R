@@ -32,6 +32,8 @@ library(ggplot2)
 library(here)
 library(terra)
 library(sf)
+library(purrr)
+library(CAbioacoustics)
 ## -------------------------------------------------------------
 
 ## Pull in the ARU meta data for point locations
@@ -57,8 +59,10 @@ aru_locs <- st_as_sf(aru_locs, coords = c("Long", "Lat"), crs = 4326)
 ## fire_interval, most_recent_fire, fire_frequency, number of fires,
 ## and landscape metrics
 aru_fire_prep <- function(fire_prod, # character vector of desired fire output
-                         aru_locs, # Data.frame with coordinates
-                         id_col = "Cell_Unit",
+                         aru_locs = NULL, # Data.frame with coordinates OR a string for the units from CAbioacoustics
+                         locs_from_cabio = T,
+                         survey_year = NULL,
+                         id_col = "deployment_name",
                          year_col = NULL,
                          x_col = "Long", # chr for x coordinate col name
                          y_col = "Lat", # chr for y coordinate col name
@@ -86,6 +90,39 @@ aru_fire_prep <- function(fire_prod, # character vector of desired fire output
   ## Retrieve the study area
   roi <- CAbioacoustics::cb_get_spatial(layer_name = "sierra_study_area")
   
+  ## Grab the ARU location from the CAbioacoustics package
+  ## Pull the spatial coordinates
+  if(is.null(aru_locs) & isTRUE(locs_from_cabio)){
+    aru_df <-
+      tbl(conn, "acoustic_field_visits") |>
+      filter(survey_year %in% c(2021, 2022, 2023, 2024) & study_type == 'Sierra Monitoring' ) |>
+      select(
+        id,
+        study_type,
+        group_id,
+        visit_id,
+        cell_id,
+        unit_number,
+        deployment_name,
+        survey_year,
+        deploy_date,
+        utm_zone,
+        utme,
+        utmn
+      ) |>
+      collect()
+    
+    aru_locs <- aru_df |>
+      filter(!is.na(utm_zone)) |> 
+      group_split(utm_zone) |>
+      map_dfr(cb_make_aru_sf) |> 
+      mutate(Cell_Unit = stringr::str_remove(deployment_name, "G[0-9]+_V[0-9]+_"))
+    
+    if(!is.null(survey_year)){
+      aru_locs <- aru_locs |> filter(survey_year %in% survey_year)
+    }
+    
+  }
   ## Remove connection
   CAbioacoustics::cb_disconnect_db()
   
@@ -113,7 +150,10 @@ aru_fire_prep <- function(fire_prod, # character vector of desired fire output
   
   ## Find the data for extraction
   #if(env_prod == "Fire_CBI"){
-    
+  if(file.exists("C:/Users/srk252/Documents/GIS_Data/CBI_Sierra/CBI_1985_2024_ZeroFilling_Stack.tif")){
+    print("CBI rasters are fixed and exist in directory. Loading the fixed stack.")
+    cbi_stack <- rast("C:/Users/srk252/Documents/GIS_Data/CBI_Sierra/CBI_1985_2024_ZeroFilling_Stack.tif")
+  }  else {
     ## Find files
     cbi_path <- "C:/Users/srk252/Documents/data_for_spencer/cbi_sierra_cat_rasters/"
     cbi_files <- list.files(cbi_path, full.names = T, pattern = "(cbi_cat_)(\\d{4})(*.tif$)")
@@ -176,13 +216,12 @@ aru_fire_prep <- function(fire_prod, # character vector of desired fire output
                  names = "template"
                  )
     
-    ## Reclassify the NAs to zero
-    ## Is this okay?
+    ## Reclassify the NAs to zero to fill in the rasters
     cbi_stack <- classify(cbi_stack, cbind(NA, 0))
     if(nlyr(cbi_stack) == length(cbi_files)){
       names(cbi_stack) <- str_extract(cbi_files, "\\d{4}")
     }
-    
+  }
     ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     ##
     ## Subsection: Fire year interval stacking
@@ -203,11 +242,52 @@ aru_fire_prep <- function(fire_prod, # character vector of desired fire output
         } else {seq_list[[int]] <- as.numeric(int.t)}
       }
       
-      ## Create the spatial products with the sequences
+      ## Check is the seq list is given in dates or integer years
+      if(!any(sort(unlist(seq_list)) %in% names(cbi_stack))){
+        aru_years <- unique(aru_locs$survey_year)
+        if(length(aru_years) > 1){
+          
+          ## Make sure all the years are integers
+          years <- as.integer(aru_years)
+          ## Find the number of years
+          num_years <- length(years)
+          ## Replicate the sequence list n times
+          seq_list <- rep(list(seq_list), num_years)
+          ## for each year replace the values to match the names of the fire data
+          for(i in 1:num_years){
+            seq_tmp <- seq_list[[i]]
+            ## Back calculate the expected dates from the sequence of numbers
+            ## Sort the unlisted seq_list vec
+            seq_vec <- sort(unlist(seq_tmp))
+            ## Find the year of interest
+            years <- as.integer(aru_years[i])
+            ## Find all years before the year of interest
+            fire_years <- years - seq_vec
+            ## Update the seq_list to the dates of the fires
+            seq_list[[i]] <- lapply(seq_list[[i]], function(x) fire_years[x])
+          }
+        }
+        
+        if(length(aru_years) == 1){
+          ## Back calculate the expected dates from the sequence of numbers
+          ## Sort the unlisted seq_list vec
+          seq_vec <- sort(unlist(seq_list))
+          ## Find the year of interest
+          years <- as.integer(aru_years)
+          ## Find all years before the year of interest
+          fire_years <- years - seq_vec
+          ## Update the seq_list to the dates of the fires
+          seq_list <- lapply(seq_list, function(x) fire_years[x])
+        }
+      } # fix year naming
+      
+      if(length(aru_years) == 1){
+      ## Create the spatial products with the sequences for 1 year
       cbi_list <- vector(mode = "list", length = int_len)
       for(i in 1:length(seq_list)){
         seq_temp <- seq_list[[i]]
-        cbi_tmp <- cbi_stack[[seq_temp]]
+        #cbi_tmp <- cbi_stack[[seq_temp]]
+        cbi_tmp <- cbi_stack[[which(names(cbi_stack) %in% seq_list[[i]])]]
         if(nlyr(cbi_tmp) < 2){
           cbi_list[[i]] <- cbi_tmp
           names(cbi_list[[i]]) <- names(cbi_tmp)
@@ -216,8 +296,38 @@ aru_fire_prep <- function(fire_prod, # character vector of desired fire output
           names(cbi_list[[i]]) <- paste0(names(cbi_tmp)[1], "-", names(cbi_tmp)[length(names(cbi_tmp))])
           cbi_int <- do.call(c, cbi_list)
         }
+      } ## Layer extraction
       }
-    }
+      
+      if(length(aru_years) > 1){
+        ## Create the spatial products with the sequences for 1 year
+        cbi_list <- vector(mode = "list", length = int_len)
+        cbi_list <- rep(list(cbi_list), num_years)
+        for(i in 1:num_years){
+          for(j in 1:int_len){
+            print(paste("Finding max value for Year:", aru_years[i], "of", num_years, "For inteval", j, "of", int_len))
+            seq_temp <- unlist(seq_list[[i]][j])
+            #cbi_tmp <- cbi_stack[[seq_temp]]
+            cbi_tmp <- cbi_stack[[which(names(cbi_stack) %in% seq_temp)]]
+            if(nlyr(cbi_tmp) < 2){
+              cbi_list[[i]][[j]] <- cbi_tmp
+              names(cbi_list[[i]][[j]]) <- names(cbi_tmp)
+            } else {
+              cbi_list[[i]][[j]] <- app(cbi_tmp, fun = max)
+              names(cbi_list[[i]][[j]]) <- paste0(names(cbi_tmp)[1], "-", names(cbi_tmp)[length(names(cbi_tmp))])
+            }
+          }
+          
+          cbi_int <- vector(length(cbi_list), mode = "list")
+          for(i in 1:length(cbi_list)){
+            cbi_int[[i]] <- do.call(c, cbi_list[[i]])
+          }
+          
+          
+        } ## Layer extraction
+      }
+      
+    } #FULL IF STATEMENT
     
     ## Project the points
     aru_locs <- st_transform(aru_locs,
@@ -233,7 +343,7 @@ aru_fire_prep <- function(fire_prod, # character vector of desired fire output
         message("Intervals set. Fire severity calculated from summarized fire years.")
         cbi_sev <- cbi_int
       } else {cbi_sev <- cbi_stack}
-      if(is.null(buff_size)){
+      if(!is.null(buff_size)){
         aru_buffer <- st_buffer(aru_locs,
                                 dist = buff_size)
         fire_sev <- exactextractr::exact_extract(cbi_sev,
@@ -373,15 +483,127 @@ aru_fire_prep <- function(fire_prod, # character vector of desired fire output
       fire_buff_merge <- Reduce(function(x, y) merge(x, y, by = id_col), fire_buff_out) 
     }
     
+    ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    ##
+    ## Subsection: Landscape Metrics
+    ##
+    ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    for(i in 1:length(cbi_int)){
+      
+      print(paste("Year:", i))
+      
+      ## Pull the ARUs for a specific year
+      aru_tmp <- aru_locs |> 
+        filter(survey_year == aru_years[i])
+      
+      ## Check that we intend to calculate landscape metrics
+      if(landscape_metrics == TRUE){
+        
+        ## Is there a buffer size?
+        if(!is.null(buff_size)){ #| is.null(hex_size)){
+          
+          ## Check to make sure sf
+          if(!is.null(id_col) & any(str_detect(class(aru_tmp), "sf"))){
+            id.v <- as.vector(unlist(st_drop_geometry(aru_tmp[, id_col])))
+          } else {
+            id.v <- NULL
+          }
+          
+          ## Individual years versus intervals for the fire data
+          if(is.null(intervals)){ 
+            message("Landscapemetrics done for individual years.")
+            cbi_lcpc <- cbi_stack 
+          } else { 
+            cbi_lcpc <- rast(cbi_int[i])
+            message("Landscapemetrics done for intervals.")
+          }
+          
+          ## Calculate LSCP
+          cbi_lsm <- landscapemetrics::sample_lsm(landscape = cbi_lcpc,
+                                                  y = aru_tmp,
+                                                  plot_id = id.v,
+                                                  shape = "circle",
+                                                  size = buff_size,
+                                                  what = c("lsm_c_pland"
+                                                           #"lsm_c_ed",
+                                                           #"lsm_c_lpi",
+                                                           #"lsm_l_shdi",
+                                                           #"lsm_l_msidi",
+                                                           #"lsm_l_msiei"
+                                                  ),
+                                                  #metric = "core",
+                                                  #level = "patch",
+                                                  return_raster = F,
+                                                  #type = "diversity metric",
+                                                  #classes_max = 3,
+                                                  verbose = FALSE,
+                                                  progress = T)
+          
+          ## Fix layer names
+          lyr_map <- data.frame(layer = 1:nlyr(cbi_lcpc), lyr_name = intervals)
+          
+          ## Merge these
+          cbi_lsm <- left_join(cbi_lsm, lyr_map)
+          
+          ## level of lsm
+          lsm_lev <- unique(cbi_lsm$level)
+          
+          if(any(lsm_lev == "landscape")){
+            cbi_lsm_l <- cbi_lsm |> 
+              filter(level == "landscape") |> 
+              select(plot_id, level, lyr_name, metric, value) |> 
+              tidyr::pivot_wider(names_from = c(metric, lyr_name), 
+                                 values_from = value,
+                                 names_glue = "{lyr_name}_{metric}_l") |> 
+              select(!level) |>
+              mutate(Year = aru_years[i])
+            
+          }
+          
+          if(any(lsm_lev == "class")){
+            
+            fire_class <- c("Unburned", "Low_Sev", "Mod_Sev", "High_Sev")
+            
+            cbi_lsm_c <- cbi_lsm |> 
+              filter(level == "class") |> 
+              mutate(FireClass = case_when(class == 0 ~ "Unburned",
+                                           class == 1 ~ "Low_Sev",
+                                           class == 2 ~ "Mod_Sev",
+                                           class == 3 ~ "High_Sev")) |> 
+              select(plot_id, level, lyr_name, FireClass, metric, value) |> 
+              tidyr::pivot_wider(names_from = c(metric, FireClass, lyr_name), 
+                                 values_from = value,
+                                 names_glue = "{FireClass}_{lyr_name}_{metric}_c") |> 
+              select(!level) |> 
+              mutate(Year = aru_years[i])
+            
+          }
+          
+          if(exists("cbi_lsm_l") & exists("cbi_lsm_c")){ cbi_lsm <- full_join(cbi_lsm_l, cbi_lsm_c) } 
+          if (exists("cbi_lsm_l") & !exists("cbi_lsm_c")) { cbi_lsm <- cbi_lsm_l }  
+          if (!exists("cbi_lsm_l") & exists("cbi_lsm_c")) { cbi_lsm <- cbi_lsm_c }
+          }
+        }
+      #} #lscpmet
+      
+      ## Grow the DF for multiple years
+      if(i == 1){
+        cbi_lsm_out <- cbi_lsm
+      } else {
+        cbi_lsm_out <- rbind(cbi_lsm_out, cbi_lsm)
+      }
+      
+    }
+    
     ## Block for what to do with CBI Fire Data
     if(landscape_metrics == TRUE){
-      if(is.null(buff_size)){ #| is.null(hex_size)){
+      if(!is.null(buff_size)){ #| is.null(hex_size)){
         if(!is.null(id_col) & any(str_detect(class(aru_locs), "sf"))){
           id.v <- as.vector(unlist(st_drop_geometry(aru_locs[, id_col])))
         } else {
           id.v <- NULL
         }
-        if(!is.null(intervals)){ 
+        if(is.null(intervals)){ 
           message("Landscapemetrics done for individual years.")
           cbi_lcpc <- cbi_stack 
         } else { 
@@ -503,12 +725,112 @@ aru_fire_prep <- function(fire_prod, # character vector of desired fire output
   #} #Env product CBI Fire
   
   return(list(FireMetrics = fire_buff_merge,
-              FireLscp = cbi_lsm
-              ))
+              FireLscp_Class = cbi_lsm_c,
+              FireLscp_Landscape = cbi_lsm_l))
   
 } ## function closure
 
 ## Test it
+
+## -------------------------------------------------------------
+##
+## Begin Section: For Luca
+##
+## -------------------------------------------------------------
+## *************************************************************
+##
+## Section Notes: Luca needs the following:
+## Proportion of high-severity fire 2 years prior
+## Proportion of high-severity fire 3-10 years prior
+## Proportion of high-severity fire 11-35 years prior
+## 
+## For 2021 -> 2019-2020; 2010-2018; 1985-2009
+##
+## *************************************************************
+
+## 2021
+cbi_luca_2021 <- cbi_lsm |> 
+  select(plot_id, `High_Sev_1985-2009_pland_c`, `High_Sev_2010-2018_pland_c`, `High_Sev_2019-2020_pland_c`) |> 
+  mutate(across(2:4, ~if_else(is.na(.), 0, .)))
+
+cbi_luca_2021 <- full_join(aru_locs, cbi_luca_2021, by = c("deployment_name" = "plot_id"))
+
+cbi_luca_2021 <- cbi_luca_2021 |> 
+  rename(Prop_High_Sev_11_35yr = `High_Sev_1985-2009_pland_c`, Prop_High_Sev_3_10yr = `High_Sev_2010-2018_pland_c`, Prop_High_Sev_1_2yr = `High_Sev_2019-2020_pland_c`)
+
+## 2022
+cbi_luca_2022 <- cbi_lsm |> 
+  select(plot_id, `High_Sev_1986-2010_pland_c`, `High_Sev_2011-2019_pland_c`, `High_Sev_2020-2021_pland_c`) |> 
+  mutate(across(2:4, ~if_else(is.na(.), 0, .)))
+
+cbi_luca_2022 <- full_join(aru_locs, cbi_luca_2022, by = c("deployment_name" = "plot_id"))
+
+cbi_luca_2022 <- cbi_luca_2022 |> 
+  rename(Prop_High_Sev_11_35yr = `High_Sev_1986-2010_pland_c`, Prop_High_Sev_3_10yr = `High_Sev_2011-2019_pland_c`, Prop_High_Sev_1_2yr = `High_Sev_2020-2021_pland_c`)
+
+## 2023
+cbi_luca_2023 <- cbi_lsm |> 
+  select(plot_id, `High_Sev_1987-2011_pland_c`, `High_Sev_2012-2020_pland_c`, `High_Sev_2021-2022_pland_c`) |> 
+  mutate(across(2:4, ~if_else(is.na(.), 0, .)))
+
+cbi_luca_2023 <- full_join(aru_locs, cbi_luca_2023, by = c("deployment_name" = "plot_id"))
+
+cbi_luca_2023 <- cbi_luca_2023 |> 
+  rename(Prop_High_Sev_11_35yr = `High_Sev_1987-2011_pland_c`, Prop_High_Sev_3_10yr = `High_Sev_2012-2020_pland_c`, Prop_High_Sev_1_2yr = `High_Sev_2021-2022_pland_c`)
+
+## 2024
+cbi_luca_2024 <- cbi_lsm |> 
+  select(plot_id, `High_Sev_1988-2012_pland_c`, `High_Sev_2013-2021_pland_c`, `High_Sev_2022-2023_pland_c`) |> 
+  mutate(across(2:4, ~if_else(is.na(.), 0, .)))
+
+cbi_luca_2024 <- cbi_luca_2024 |> 
+  rename(Prop_High_Sev_11_35yr = `High_Sev_1988-2012_pland_c`, Prop_High_Sev_3_10yr = `High_Sev_2013-2021_pland_c`, Prop_High_Sev_1_2yr = `High_Sev_2022-2023_pland_c`)
+
+cbi_luca_2024 <- full_join(aru_locs, cbi_luca_2024, by = c("deployment_name" = "plot_id"))
+
+## Bind
+cbi_luca <- rbind(cbi_luca_2021, cbi_luca_2022, cbi_luca_2023, cbi_luca_2024)
+
+cbi_luca |>
+  filter(survey_year == 2022) |> 
+  ggplot() + 
+  geom_sf(aes(color = Prop_High_Sev_1_2yr)) + 
+  scale_color_viridis_c()
+
+cbi_luca <- cbi_luca |> 
+  st_transform(crs = 4326) |> 
+  mutate(lon = st_coordinates(cbi_luca)[,1],
+         lat = st_coordinates(cbi_luca)[,2]) |> 
+  st_drop_geometry() |> 
+  select(id:deploy_date, lat, lon, everything())
+
+
+#data.table::fwrite(cbi_luca, file = "C:/Users/srk252/Documents/ARU_2021_2024_PropHighSevFire_Luca.csv")
+
+rthet_luca <- data.table::fread("C:/Users/srk252/Documents/ARU_2021_2024_ExtractedDataRelHet_Luca.csv")
+rthet_luca <- rthet_luca |> tidyr::as_tibble()
+
+luca_da <- cbi_luca |> 
+  select(id, Prop_High_Sev_11_35yr:Prop_High_Sev_1_2yr) |> 
+  full_join(rthet_luca, by = "id") |> 
+  select(id, study_type:deploy_date, lon, lat, Prop_High_Sev_1_2yr, Prop_High_Sev_3_10yr, Prop_High_Sev_11_35yr, RelativeTempC, ThermalHet, MeanElevation)
+
+luca_da |> 
+  filter(survey_year == 2022) |> 
+  st_as_sf(coords = c("lon", "lat"), crs = 4326) |> 
+  mapview::mapview(zcol = "Prop_High_Sev_1_2yr")
+
+data.table::fwrite(luca_da, file = "C:/Users/srk252/Documents/ARU_2021_2024_FireTempElevationVars_Luca.csv")
+
+
+## -------------------------------------------------------------
+##
+## Begin Section: Garrett
+##
+## -------------------------------------------------------------
+datgar <- cbi_lsm_out
+
+write.csv(datgar, here("C:/Users/srk252/Documents/ARU_2021_2024_Garrett_PropFire.csv"))
 
 ## -------------------------------------------------------------
 ##
