@@ -65,8 +65,8 @@ aru_locs <- st_as_sf(aru_locs, coords = c("Long", "Lat"), crs = 4326)
 ## and landscape metrics
 aru_fire_prep <- function(fire_prod = NULL, # character vector of desired fire output
                           locs_from_cabio = T, #override flag for using CAbioacoustic locations and metadata
-                          aru_locs = NULL, # Data.frame with coordinates for custom locations                          
-                          survey_years = NULL, # Survey year is only applicable for locs_from_cabio = TRUE
+                          custom_locs = NULL, # Data.frame with coordinates for custom locations                          
+                          survey_years = c(2021, 2022), # Survey year is only applicable for locs_from_cabio = TRUE
                           id_col = "deployment_name",
                           year_col = NULL,
                           x_col = "Long", # chr for x coordinate col name
@@ -74,11 +74,10 @@ aru_fire_prep <- function(fire_prod = NULL, # character vector of desired fire o
                           .crs = 4326, # default WGS84 for coordinates
                           des_out, # desired output
                           spat_ex, # chr for type (point, buff, hex)
-                          buff_size = NULL, # vector of buffer sizes
+                          buff_size = 120, # vector of buffer sizes
                           #hex_size = NULL,
                           intervals = c("1-5", "6-10", "11-35"),
-                          landscape_metrics = T,
-                          ...
+                          landscape_metrics = T
 ){
   
   ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -158,7 +157,8 @@ aru_fire_prep <- function(fire_prod = NULL, # character vector of desired fire o
   
   cbi_int <- int_ras_fun(ras_stack = cbi_stack,
                          intervals = intervals,
-                         sum_int = "max")
+                         sum_int = "max",
+                         locations = aru_locs)
   
   ## Project the points
   aru_locs <- st_transform(aru_locs,
@@ -335,202 +335,13 @@ aru_fire_prep <- function(fire_prod = NULL, # character vector of desired fire o
                 id_col = id_col,
                 metrics = c("lsm_c_pland"))
   
-#   fire_lscp_fun <- function(cbi_stack, aru_locs){
-#     for(i in 1:length(cbi_int)){
-#       
-#       print(paste("Year:", i))
-#       
-#       ## Pull the ARUs for a specific year
-#       aru_tmp <- aru_locs |> 
-#         filter(survey_year == aru_years[i])
-#       
-#       ## Check that we intend to calculate landscape metrics
-#       if(landscape_metrics == TRUE){
-#         
-#         ## Is there a buffer size?
-#         if(!is.null(buff_size)){ #| is.null(hex_size)){
-#           
-#           ## Check to make sure sf
-#           if(!is.null(id_col) & any(str_detect(class(aru_tmp), "sf"))){
-#             id.v <- as.vector(unlist(st_drop_geometry(aru_tmp[, id_col])))
-#           } else {
-#             id.v <- NULL
-#           }
-#           
-#           ## Individual years versus intervals for the fire data
-#           if(is.null(intervals)){ 
-#             message("Landscapemetrics done for individual years.")
-#             cbi_lcpc <- cbi_stack 
-#           } else { 
-#             cbi_lcpc <- rast(cbi_int[i])
-#             message("Landscapemetrics done for intervals.")
-#           }
-#           
-#           ## Calculate LSCP
-#           cbi_lsm <- landscapemetrics::sample_lsm(landscape = cbi_lcpc,
-#                                                   y = aru_tmp,
-#                                                   plot_id = id.v,
-#                                                   shape = "circle",
-#                                                   size = buff_size,
-#                                                   what = c("lsm_c_pland"
-#                                                            #"lsm_c_ed",
-#                                                            #"lsm_c_lpi",
-#                                                            #"lsm_l_shdi",
-#                                                            #"lsm_l_msidi",
-#                                                            #"lsm_l_msiei"
-#                                                   ),
-#                                                   #metric = "core",
-#                                                   #level = "patch",
-#                                                   return_raster = F,
-#                                                   #type = "diversity metric",
-#                                                   #classes_max = 3,
-#                                                   verbose = FALSE,
-#                                                   progress = T)
-#           
-#           ## Fix layer names
-#           lyr_map <- data.frame(layer = 1:nlyr(cbi_lcpc), lyr_name = intervals)
-#           
-#           ## Merge these
-#           cbi_lsm <- left_join(cbi_lsm, lyr_map)
-#           
-#           ## level of lsm
-#           lsm_lev <- unique(cbi_lsm$level)
-#           
-#           if(any(lsm_lev == "landscape")){
-#             cbi_lsm_l <- cbi_lsm |> 
-#               filter(level == "landscape") |> 
-#               select(plot_id, level, lyr_name, metric, value) |> 
-#               tidyr::pivot_wider(names_from = c(metric, lyr_name), 
-#                                  values_from = value,
-#                                  names_glue = "{lyr_name}_{metric}_l") |> 
-#               select(!level) |>
-#               mutate(Year = aru_years[i])
-#             
-#           }
-#           
-#           if(any(lsm_lev == "class")){
-#             
-#             fire_class <- c("Unburned", "Low_Sev", "Mod_Sev", "High_Sev")
-#             
-#             cbi_lsm_c <- cbi_lsm |> 
-#               filter(level == "class") |> 
-#               mutate(FireClass = case_when(class == 0 ~ "Unburned",
-#                                            class == 1 ~ "Low_Sev",
-#                                            class == 2 ~ "Mod_Sev",
-#                                            class == 3 ~ "High_Sev")) |> 
-#               select(plot_id, level, lyr_name, FireClass, metric, value) |> 
-#               tidyr::pivot_wider(names_from = c(metric, FireClass, lyr_name), 
-#                                  values_from = value,
-#                                  names_glue = "{FireClass}_{lyr_name}_{metric}_c") |> 
-#               select(!level) |> 
-#               mutate(Year = aru_years[i])
-#             
-#           }
-#           
-#           if(exists("cbi_lsm_l") & exists("cbi_lsm_c")){ cbi_lsm <- full_join(cbi_lsm_l, cbi_lsm_c) } 
-#           if (exists("cbi_lsm_l") & !exists("cbi_lsm_c")) { cbi_lsm <- cbi_lsm_l }  
-#           if (!exists("cbi_lsm_l") & exists("cbi_lsm_c")) { cbi_lsm <- cbi_lsm_c }
-#         }
-#       }
-#       #} #lscpmet
-#       
-#       ## Grow the DF for multiple years
-#       if(i == 1){
-#         cbi_lsm_out <- cbi_lsm
-#       } else {
-#         cbi_lsm_out <- rbind(cbi_lsm_out, cbi_lsm)
-#       }
-#       
-#     }
-#     
-#     ## Block for what to do with CBI Fire Data
-#     if(landscape_metrics == TRUE){
-#       if(!is.null(buff_size)){ #| is.null(hex_size)){
-#         if(!is.null(id_col) & any(str_detect(class(aru_locs), "sf"))){
-#           id.v <- as.vector(unlist(st_drop_geometry(aru_locs[, id_col])))
-#         } else {
-#           id.v <- NULL
-#         }
-#         if(is.null(intervals)){ 
-#           message("Landscapemetrics done for individual years.")
-#           cbi_lcpc <- cbi_stack 
-#         } else { 
-#           cbi_lcpc <- cbi_int
-#           message("Landscapemetrics done for intervals.")
-#         }
-#         cbi_lsm <- landscapemetrics::sample_lsm(landscape = cbi_lcpc,
-#                                                 y = aru_locs,
-#                                                 plot_id = id.v,
-#                                                 shape = "circle",
-#                                                 size = buff_size,
-#                                                 what = c("lsm_c_pland",
-#                                                          "lsm_c_ed",
-#                                                          "lsm_c_lpi",
-#                                                          "lsm_l_shdi",
-#                                                          "lsm_l_msidi",
-#                                                          "lsm_l_msiei"),
-#                                                 #metric = "core",
-#                                                 #level = "patch",
-#                                                 return_raster = F,
-#                                                 #type = "diversity metric",
-#                                                 #classes_max = 3,
-#                                                 verbose = FALSE,
-#                                                 progress = T)
-#         
-#         ## Fix layer names
-#         lyr_map <- data.frame(layer = 1:nlyr(cbi_lcpc), lyr_name = names(cbi_lcpc))
-#         
-#         ## Merge these
-#         cbi_lsm <- left_join(cbi_lsm, lyr_map)
-#         
-#         ## level of lsm
-#         lsm_lev <- unique(cbi_lsm$level)
-#         
-#         if(any(lsm_lev == "landscape")){
-#           cbi_lsm_l <- cbi_lsm |> 
-#             filter(level == "landscape") |> 
-#             select(plot_id, level, lyr_name, metric, value) |> 
-#             tidyr::pivot_wider(names_from = c(metric, lyr_name), 
-#                                values_from = value,
-#                                names_glue = "{lyr_name}_{metric}_l") |> 
-#             select(!level)
-#           
-#         }
-#         
-#         if(any(lsm_lev == "class")){
-#           
-#           fire_class <- c("Unburned", "Low_Sev", "Mod_Sev", "High_Sev")
-#           
-#           cbi_lsm_c <- cbi_lsm |> 
-#             filter(level == "class") |> 
-#             mutate(FireClass = case_when(class == 0 ~ "Unburned",
-#                                          class == 1 ~ "Low_Sev",
-#                                          class == 2 ~ "Mod_Sev",
-#                                          class == 3 ~ "High_Sev")) |> 
-#             select(plot_id, level, lyr_name, FireClass, metric, value) |> 
-#             tidyr::pivot_wider(names_from = c(metric, FireClass, lyr_name), 
-#                                values_from = value,
-#                                names_glue = "{FireClass}_{lyr_name}_{metric}_c") |> 
-#             select(!level)
-#           
-#         }
-#         
-#         if(exists("cbi_lsm_l") & exists("cbi_lsm_c")){
-#           cbi_lsm <- full_join(cbi_lsm_l, cbi_lsm_c)
-#         }
-#       }
-#     } #lscpmet
-#   }
-#   
-#   #} #Env product CBI Fire
-#   
-#   return(list(FireMetrics = fire_buff_merge,
-#               FireLscp_Class = cbi_lsm_c,
-#               FireLscp_Landscape = cbi_lsm_l))
-#   
-# } ## function closure
 
-## Test it
+  return(list(FireMetrics = fire_buff_merge,
+              FireLscp = fire_lscp_out))
+
+} ## function closure
+
+test <- aru_fire_prep()
 
 ## -------------------------------------------------------------
 ##
@@ -582,10 +393,12 @@ cabio_loc_query <- function(years = survey_years){
     map_dfr(cb_make_aru_sf) |> 
     mutate(Cell_Unit = stringr::str_remove(deployment_name, "G[0-9]+_V[0-9]+_"))
   
-  return(aru_locs)
-  
   ## Remove connection
   CAbioacoustics::cb_disconnect_db()
+  
+  ## Return the object
+  return(aru_locs)
+  
 }
 
 ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -644,7 +457,7 @@ cbi_stack_fun <- function(cbi_files){
 int_ras_fun <- function(ras_stack,
                         intervals,
                         sum_int,
-                        aru_locs = aru_locs){
+                        locations){
   
   if(!is.null(intervals) & class(intervals) == "character"){
     int_len <- length(intervals)
@@ -662,7 +475,7 @@ int_ras_fun <- function(ras_stack,
     
     ## Check is the seq list is given in dates or integer years
     if(!any(sort(unlist(seq_list)) %in% names(ras_stack))){
-      aru_years <- unique(aru_locs$survey_year)
+      aru_years <- unique(locations$survey_year)
       if(length(aru_years) > 1){
         
         ## Make sure all the years are integers
