@@ -66,7 +66,10 @@ aru_locs <- st_as_sf(aru_locs, coords = c("Long", "Lat"), crs = 4326)
 aru_fire_prep <- function(fire_prod = NULL, # character vector of desired fire output
                           locs_from_cabio = T, #override flag for using CAbioacoustic locations and metadata
                           custom_locs = NULL, # Data.frame with coordinates for custom locations                          
-                          survey_years = c(2021, 2022), # Survey year is only applicable for locs_from_cabio = TRUE
+                          survey_years = c(2021,
+                                           2022,
+                                           2023,
+                                           2024), # Survey year is only applicable for locs_from_cabio = TRUE
                           id_col = "deployment_name",
                           year_col = NULL,
                           x_col = "Long", # chr for x coordinate col name
@@ -86,7 +89,13 @@ aru_fire_prep <- function(fire_prod = NULL, # character vector of desired fire o
   ##
   ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   
-  if(locs_from_cabio){aru_locs <- cabio_loc_query(years = survey_years)}
+  if(locs_from_cabio){
+    aru_locs <- cabio_loc_query(years = survey_years)
+  } else if (!is.null(custom_locs)) {
+    aru_locs <- custom_locs
+  } else {
+    stop("No locations provided. Either set locs_from_cabio = TRUE or provide locations for custom_locs.")
+  }
   
   ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   ##
@@ -117,7 +126,7 @@ aru_fire_prep <- function(fire_prod = NULL, # character vector of desired fire o
   
   if(file.exists("C:/Users/srk252/Documents/GIS_Data/CBI_Sierra/CBI_1985_2024_ZeroFilling_Stack.tif")){
     
-    print("CBI rasters are fixed and exist in directory. Loading the fixed stack.")
+    message("CBI rasters are fixed and exist in directory. Loading the fixed stack.")
     cbi_stack <- rast("C:/Users/srk252/Documents/GIS_Data/CBI_Sierra/CBI_1985_2024_ZeroFilling_Stack.tif")
   
     } else {
@@ -154,12 +163,14 @@ aru_fire_prep <- function(fire_prod = NULL, # character vector of desired fire o
   ## Subsection: Fire year interval stacking
   ##
   ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  
+  if(!is.null(intervals)){
   cbi_int <- int_ras_fun(ras_stack = cbi_stack,
                          intervals = intervals,
                          sum_int = "max",
                          locations = aru_locs)
-  
+  } else {
+    message("No intervals specified. Skipping interval binning.")
+  }
   ## Project the points
   aru_locs <- st_transform(aru_locs,
                            crs = crs(cbi_stack))
@@ -197,44 +208,45 @@ aru_fire_prep <- function(fire_prod = NULL, # character vector of desired fire o
   ## Subsection: Calculate fire variables
   ##
   ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  years <- as.numeric(names(cbi_stack))
+  ras_years <- as.numeric(names(cbi_stack))
   
   if("time_since_fire" %in% fire_prod){
     if(!is.null(intervals)){
-      message("Intervals are set. Time since fire doesn't accept intervals...output will be for single years.")
-    } else {
-      ## Time to most recent fire
-      time_since_fire <- terra::app(cbi_stack, 
-                                    fun = function(x) time_to_most_recent_fire(cell_values = x,
-                                                                               years = years))
-    }}
+      message("Intervals are set. Time since fire doesn't accept intervals...output will be generated from single years.")
+    }
+    
+    ## Time to most recent fire
+    time_since_fire <- terra::app(cbi_stack, 
+                                  fun = function(x) time_to_most_recent_fire(cell_values = x,
+                                                                             years = ras_years))
+  }
   
   if("fire_freq" %in% fire_prod){
     if(!is.null(intervals)){
-      message("Intervals are set. Fire frequency doesn't accept intervals.")
-    } else {
-      ## Fire frequency (num fires/total record length)
-      fire_freq <- terra::app(cbi_stack, 
-                              fun = function(x) fire_freq_calc(cell_values = x,
-                                                               years = years))
-    }}
+      message("Intervals are set. Fire frequency doesn't accept intervals...output will be generated from single years.")
+    } 
+    ## Fire frequency (num fires/total record length)
+    fire_freq <- terra::app(cbi_stack, 
+                            fun = function(x) fire_freq_calc(cell_values = x,
+                                                             years = ras_years))
+  }
   
   if("fire_ret_int" %in% fire_prod){
     if(!is.null(intervals)){
-      message("Intervals are set. Fire return interval doesn't accept intervals.")
-    } else {
-      ## Fire return interval (mean of time between successive fires)
-      fire_return_int <- terra::app(cbi_stack, 
-                                    fun = function(x) fire_return_int(cell_values = x, 
-                                                                      years = years))
-    }}
+      message("Intervals are set. Fire return interval doesn't accept intervals.,,output will be generated from single years.")
+    } 
+    ## Fire return interval (mean of time between successive fires)
+    fire_return_int <- terra::app(cbi_stack, 
+                                  fun = function(x) fire_return_int(cell_values = x, 
+                                                                    years = ras_years))
+  }
   
   ## Report the status of s2 geometry for convenience
-  if(!is.null(buffer_size)){
+  if(!is.null(buff_size)){
     if(sf_use_s2() == T){
-      print("s2 geometry enabled. Buff_size interpreted as meters.")
+      message("s2 geometry enabled. Buff_size interpreted as meters.")
     } else {
-      print("s2 disabled, if locations are geodetic (lat/lon) units interpretted as degrees.")
+      message("s2 disabled, if locations are geodetic (lat/lon) units interpretted as degrees.")
     }
   }
   
@@ -245,12 +257,9 @@ aru_fire_prep <- function(fire_prod = NULL, # character vector of desired fire o
   ##
   ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   
-  ## Buffer extraction code from Jay (tidy code)
-  ## Retrieve variable names from the
-  ## WIP
   if(any(fire_prod %in% c("time_since_fire", "fire_freq", "fire_ret_int"))){
-    variable_name <- fire_prod
-    fire_buff_out <- vector(mode = "list", length = length(fire_prod))
+    variable_name <- fire_prod[!fire_prod == "fire_severity"]
+    fire_buff_out <- vector(mode = "list", length = length(variable_name))
     
     for(var in 1:length(variable_name)){
       
@@ -319,6 +328,8 @@ aru_fire_prep <- function(fire_prod = NULL, # character vector of desired fire o
       
     }
     fire_buff_merge <- Reduce(function(x, y) merge(x, y, by = id_col), fire_buff_out) 
+  } else {
+    fire_buff_merge <- NULL
   }
   
   ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -328,20 +339,25 @@ aru_fire_prep <- function(fire_prod = NULL, # character vector of desired fire o
   ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   ## Function should estimate specific landscape metrics for the
   ## interval-based raster data for CBI
-  fire_lscp_out <- fire_lscp_fun(ras_int = cbi_int,
-                ras_stack = cbi_stack,
-                locs = aru_locs,
-                buff_size = buff_size,
-                id_col = id_col,
-                metrics = c("lsm_c_pland"))
-  
+  if(landscape_metrics){
+    fire_lscp_out <- fire_lscp_fun(ras_int = cbi_int,
+                                   ras_stack = cbi_stack,
+                                   locs = aru_locs,
+                                   buff_size = buff_size,
+                                   id_col = id_col,
+                                   metrics = c("lsm_c_pland"))
+  } else {
+    fire_lscp_out <- NULL
+  }
 
   return(list(FireMetrics = fire_buff_merge,
               FireLscp = fire_lscp_out))
 
 } ## function closure
 
-test <- aru_fire_prep()
+test <- aru_fire_prep(fire_prod = c("fire_severity", "time_since_fire"),
+                      survey_years = 2021,
+                      intervals = NULL)
 
 ## -------------------------------------------------------------
 ##
@@ -516,8 +532,8 @@ int_ras_fun <- function(ras_stack,
       ## Create the spatial products with the sequences for 1 year
       ras_list <- vector(mode = "list", length = int_len)
       for(i in 1:length(seq_list)){
-        message(paste("Finding", sum_int, "value for Year:", aru_years[i], "For interval", j, "of", int_len))
         message("This is a single year workflow. Set by survey_years at the top-level.")
+        message(paste("Finding", sum_int, "value for Year:", aru_years[i], "For interval", j, "of", int_len))
         seq_temp <- seq_list[[i]]
         ras_tmp <- ras_stack[[which(names(ras_stack) %in% seq_list[[i]])]]
         if(nlyr(ras_tmp) < 2){
@@ -739,12 +755,12 @@ combine_metrics <- function(landscape_metrics = NULL, class_metrics = NULL) {
 
 ## Function should estimate specific landscape metrics for the
 ## interval-based raster data for CBI
-fire_lscp_fun <- function(ras_int = cbi_int, 
-                          ras_stack = cbi_stack, 
-                          locs = aru_locs,
-                          years = survey_years,
-                          buff_size = buff_size,
-                          id_col = id_col,
+fire_lscp_fun <- function(ras_int, 
+                          ras_stack, 
+                          locs,
+                          years,
+                          buff_size,
+                          id_col,
                           metrics = c("lsm_c_pland")){
   
   for(i in 1:length(ras_int)){
@@ -755,89 +771,84 @@ fire_lscp_fun <- function(ras_int = cbi_int,
     locs_tmp <- locs |> 
       filter(survey_year == years[i])
     
-    ## Check that we intend to calculate landscape metrics
-    if(landscape_metrics == TRUE){
+    ## Is there a buffer size?
+    if(!is.null(buff_size)){ #| is.null(hex_size)){
       
-      ## Is there a buffer size?
-      if(!is.null(buff_size)){ #| is.null(hex_size)){
-        
-        ## Check to make sure sf
-        if(!is.null(id_col) & any(str_detect(class(locs_tmp), "sf"))){
-          id.v <- as.vector(unlist(st_drop_geometry(locs_tmp[, id_col])))
-        } else {
-          id.v <- NULL
-        }
-        
-        ## Individual years versus intervals for the fire data
-        if(is.null(intervals)){ 
-          message("Landscapemetrics done for individual years.")
-          ras_lcpc <- ras_stack 
-        } else { 
-          ras_lcpc <- ras_int[[i]]
-          message("Landscapemetrics done for intervals.")
-        }
-        
-        ## Calculate LSCP
-        lsm <- landscapemetrics::sample_lsm(landscape = ras_lcpc,
-                                            y = locs_tmp,
-                                            plot_id = id.v,
-                                            shape = "circle",
-                                            size = buff_size,
-                                            what = metrics,
-                                            #metric = "core",
-                                            #level = "patch",
-                                            return_raster = F,
-                                            #type = "diversity metric",
-                                            #classes_max = 3,
-                                            verbose = FALSE,
-                                            progress = T)
-        
-        ## Fix layer names
-        lyr_map <- data.frame(layer = 1:nlyr(ras_lcpc), lyr_name = intervals)
-        
-        ## Merge these
-        lsm <- left_join(lsm, lyr_map)
-        
-        ## level of lsm
-        lsm_lev <- unique(lsm$level)
-        
-        if(any(lsm_lev == "landscape")){
-          lsm_l <- lsm |> 
-            filter(level == "landscape") |> 
-            select(plot_id, level, lyr_name, metric, value) |> 
-            tidyr::pivot_wider(names_from = c(metric, lyr_name), 
-                               values_from = value,
-                               names_glue = "{lyr_name}_{metric}_l") |> 
-            select(!level) |>
-            mutate(Year = years[i])
-          
-        }
-        
-        if(any(lsm_lev == "class")){
-          
-          fire_class <- c("Unburned", "Low_Sev", "Mod_Sev", "High_Sev")
-          
-          lsm_c <- lsm |> 
-            filter(level == "class") |> 
-            mutate(FireClass = case_when(class == 0 ~ "Unburned",
-                                         class == 1 ~ "Low_Sev",
-                                         class == 2 ~ "Mod_Sev",
-                                         class == 3 ~ "High_Sev")) |> 
-            select(plot_id, level, lyr_name, FireClass, metric, value) |> 
-            tidyr::pivot_wider(names_from = c(metric, FireClass, lyr_name), 
-                               values_from = value,
-                               names_glue = "{FireClass}_{lyr_name}_{metric}_c") |> 
-            select(!level) |> 
-            mutate(Year = aru_years[i])
-          
-        }
-        
-        if(exists("lsm_l") & exists("lsm_c")){ lsm <- full_join(lsm_l, lsm_c) } 
-        if (exists("lsm_l") & !exists("lsm_c")) { lsm <- lsm_l }  
-        if (!exists("lsm_l") & exists("lsm_c")) { lsm <- lsm_c }
+      ## Check to make sure sf
+      if(!is.null(id_col) & any(str_detect(class(locs_tmp), "sf"))){
+        id.v <- as.vector(unlist(st_drop_geometry(locs_tmp[, id_col])))
+      } else {
+        id.v <- NULL
       }
-    } else {stop("LandscapeMetrics calculation not selected.")}
-    #} #lscpmet
+      
+      ## Individual years versus intervals for the fire data
+      if(is.null(intervals)){ 
+        message("Landscapemetrics done for individual years.")
+        ras_lcpc <- ras_stack 
+      } else { 
+        ras_lcpc <- ras_int[[i]]
+        message("Landscapemetrics done for intervals.")
+      }
+      
+      ## Calculate LSCP
+      lsm <- landscapemetrics::sample_lsm(landscape = ras_lcpc,
+                                          y = locs_tmp,
+                                          plot_id = id.v,
+                                          shape = "circle",
+                                          size = buff_size,
+                                          what = metrics,
+                                          #metric = "core",
+                                          #level = "patch",
+                                          return_raster = F,
+                                          #type = "diversity metric",
+                                          #classes_max = 3,
+                                          verbose = FALSE,
+                                          progress = T)
+      
+      ## Fix layer names
+      lyr_map <- data.frame(layer = 1:nlyr(ras_lcpc), lyr_name = intervals)
+      
+      ## Merge these
+      lsm <- left_join(lsm, lyr_map)
+      
+      ## level of lsm
+      lsm_lev <- unique(lsm$level)
+      
+      if(any(lsm_lev == "landscape")){
+        lsm_l <- lsm |> 
+          filter(level == "landscape") |> 
+          select(plot_id, level, lyr_name, metric, value) |> 
+          tidyr::pivot_wider(names_from = c(metric, lyr_name), 
+                             values_from = value,
+                             names_glue = "{lyr_name}_{metric}_l") |> 
+          select(!level) |>
+          mutate(Year = years[i])
+        
+      }
+      
+      if(any(lsm_lev == "class")){
+        
+        fire_class <- c("Unburned", "Low_Sev", "Mod_Sev", "High_Sev")
+        
+        lsm_c <- lsm |> 
+          filter(level == "class") |> 
+          mutate(FireClass = case_when(class == 0 ~ "Unburned",
+                                       class == 1 ~ "Low_Sev",
+                                       class == 2 ~ "Mod_Sev",
+                                       class == 3 ~ "High_Sev")) |> 
+          select(plot_id, level, lyr_name, FireClass, metric, value) |> 
+          tidyr::pivot_wider(names_from = c(metric, FireClass, lyr_name), 
+                             values_from = value,
+                             names_glue = "{FireClass}_{lyr_name}_{metric}_c") |> 
+          select(!level) |> 
+          mutate(Year = years[i])
+        
+      }
+      
+      if(exists("lsm_l") & exists("lsm_c")){ lsm <- full_join(lsm_l, lsm_c) } 
+      if (exists("lsm_l") & !exists("lsm_c")) { lsm <- lsm_l }  
+      if (!exists("lsm_l") & exists("lsm_c")) { lsm <- lsm_c }
+    }
     
     ## Grow the DF for multiple years
     if(i == 1){
@@ -847,7 +858,10 @@ fire_lscp_fun <- function(ras_int = cbi_int,
     }
     
   }
+  ## Return
+  return(lsm_out)
   
+}
   # ## Block for what to do with CBI Fire Data
   # if(landscape_metrics == TRUE){
   #   if(!is.null(buff_size)){ #| is.null(hex_size)){
@@ -925,11 +939,6 @@ fire_lscp_fun <- function(ras_int = cbi_int,
   #     }
   #   }
   # } #lscpmet
-  
-  ## Return
-  return(lsm_out)
-  
-}
 
 fire_lscp_fun()
 
@@ -946,7 +955,8 @@ fire_lscp_fun()
 
 ## Fire variables
 ## Time since fire
-time_to_most_recent_fire <- function(cell_values, years) {
+time_to_most_recent_fire <- function(cell_values, 
+                                     years) {
   # Check if there are any 1s in the cell
   if (any(cell_values > 0)) {
     # Find the most recent occurrence of 1 (event) - we look for the last occurrence of 1
@@ -961,6 +971,65 @@ time_to_most_recent_fire <- function(cell_values, years) {
   }
   
   return(time_since_event_value)
+}
+
+
+years <- 1985:2023
+nrows <- 10
+ncols <- 10
+nlyrs <- length(years)
+
+r <- c()
+for(i in 1:nlyrs){
+  r.tmp <- rast(nrows = nrows, ncols = ncols)
+  
+  random_values <- sample(c(0, 1), size = nrows * ncols, replace = TRUE)
+  
+  values(r.tmp) <- random_values
+  
+  r <- c(r, r.tmp)
+}
+
+r <- do.call(c, r)
+
+
+plot(r, main = "Random Binary Raster")
+
+names(r) <- years
+
+test <- app(r, function(x) time_to_most_recent_fire(x, years))
+plot(test)
+
+time_to_most_recent_fire <- function(cell_values, years) {
+  # Add debugging prints
+  #print("Input cell values:")
+  #print(cell_values)
+  #print("Input years:")
+  #print(years)
+  
+  # Ensure years are numeric and sorted
+  years <- sort(as.numeric(years))
+  max_year <- max(years)
+  
+  # Check if there are any fires (values > 0)
+  if (any(cell_values > 0, na.rm = TRUE)) {
+    # Find the most recent fire year index
+    fire_indices <- which(cell_values > 0)
+    if(length(fire_indices) > 0) {
+      most_recent_fire_index <- max(fire_indices)
+      most_recent_fire_year <- years[most_recent_fire_index]
+      time_since_fire <- max_year - most_recent_fire_year
+      
+      # Debug print
+      #print(paste("Most recent fire year:", most_recent_fire_year))
+      #print(paste("Time since fire:", time_since_fire))
+      
+      return(time_since_fire)
+    }
+  }
+  
+  # If no fires found, return the full time period
+  return(max_year - min(years))
 }
 
 
@@ -985,7 +1054,7 @@ fire_freq_calc <- function(cell_values, years) {
     fire_freq <- num_fires / num_years
     
   } else {
-    # If no event occurred, return NA
+    # If no event occurred, return 0
     fire_freq <- 0
   }
   
