@@ -89,7 +89,7 @@ cat("
       alpha1[k] ~ dnorm(mu.alpha1, tau.alpha1)
       alpha2[k] ~ dnorm(mu.alpha2, tau.alpha2)
       alpha3[k] ~ dnorm(mu.alpha3, tau.alpha3)
-      alpha4[k] ~ dnorm(mu.alpha4, tau.alpha4)
+      #alpha4[k] ~ dnorm(mu.alpha4, tau.alpha4)
     }
     
     #################
@@ -170,9 +170,9 @@ cat("
     sd.alpha3 ~ dunif(0, 2)
     
     # Body mass for detection
-    mu.alpha4 ~ dnorm(0, 0.1)
-    tau.alpha4 <- pow(sd.alpha4, -2)
-    sd.alpha4 ~ dunif(0, 2)
+    #mu.alpha4 ~ dnorm(0, 0.1)
+    #tau.alpha4 <- pow(sd.alpha4, -2)
+    #sd.alpha4 ~ dunif(0, 2)
     
     #################################################
     ## Ecological model for the latent process (z) ##
@@ -211,7 +211,7 @@ cat("
     for(k in 1:nspec){ #columns y 
       for(j in 1:N){ # rows y
         # Detection model on logit scale
-        logit(p[j,k]) <- lp[k] + alpha1[k] * eff.hrs[j] + alpha2[k] * eff.jday[j] + alpha3[k] * pow(eff.jday[j], 2) + alpha4[k] * bmass[k]
+        logit(p[j,k]) <- lp[k] + alpha1[k] * eff.hrs[j] + alpha2[k] * eff.jday[j] + alpha3[k] * pow(eff.jday[j], 2) #+ alpha4[k] * bmass[k]
           
         # Latent state and detection
         # Site_id nested index
@@ -323,8 +323,8 @@ params1 <- c("mu.lpsi",
              "sd.alpha2",
              "mu.alpha3",
              "sd.alpha3",
-             "mu.alpha4",
-             "sd.alpha4",
+             #"mu.alpha4",
+             #"sd.alpha4",
              "Ntotal",
              "Nsite",
              "fitZ",
