@@ -104,7 +104,7 @@ summary(thresh)
 
 
 ## Source the ac_det_filter function
-source(here("./Code/Sierra_functions.R"))
+source(here("./Code/Acoustic_Data_Prep/Sierra_functions.R"))
 
 ## threshold file
 thresh <- readr::read_csv("./Data/Thresholds_2021_20230309.csv")
@@ -112,19 +112,19 @@ thresh <- readr::read_csv("./Data/Thresholds_2021_20230309.csv")
 ## Run the function
 aru_det_file_gen(det_dir = "C:/Users/srk252/Documents/Rprojs/Sierra_Biodiv/Data/Detections_By_Species/",
                  det_years = c("2021"),
-                 seas_format = T,
+                 seas_format = F,
                  seas_outdir = "C:/Users/srk252/Documents/Rprojs/Sierra_Biodiv/Data/Generated_DFs/Seasonal_Summaries/",
                  occ_format = T,
-                 occ_outdir = "C:/Users/srk252/Documents/Rprojs/Sierra_Biodiv/Data/Generated_DFs/Occ_Mod_Data/",
+                 occ_outdir = "C:/Users/srk252/Documents/Rprojs/Sierra_Biodiv/Data/Generated_DFs/Occ_Mod_Data/95_Thresh_Cutoff/",
                  eff_file = T,
                  coord_link = T,
                  d_thresh = thresh,
                  thresh_scale = "Conf",
-                 thresh_cut = "99",
+                 thresh_cut = "95",
                  time_format = "ymd",
                  no_dets = 2,
                  binary = T,
-                 date_range = c("2021-05-15", "2021-06-30"
+                 date_range = c("2021-05-15", "2021-07-15"
                                 #"2022-06-01", "2022-07-30",
                                 #"2023-06-01", "2023-07-30"
                                 ),
