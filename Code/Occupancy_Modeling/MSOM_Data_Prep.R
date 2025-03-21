@@ -121,7 +121,7 @@ y <- y[,,-drop.sp]
 sp.names <- dimnames(y)
 sp.df <- data.frame(Index = 1:length(sp.names[[3]]),
                     Species = sp.names[[3]])
-#write.csv(sp.df, file = here::here("Code/Occupancy_Modeling/SpeciesIndex.csv"))
+#write.csv(sp.df, file = here::here("Code/Occupancy_Modeling/SpeciesIndex_Filtered.csv"))
 
 ## Redefine nspec
 nspec <- dim(y)[3]
@@ -305,6 +305,13 @@ for(i in 1:dim(y)[3]){
 ## Right now lets pull in the ARU meta data
 aru_meta <- readr::read_csv(here("Data/ARU_120m.csv"))
 aru_meta$Cell_Unit <- paste0(aru_meta$cell_id, "_", aru_meta$unit_numbe)
+
+# ## Write the filtered DF
+# aru_filt <- aru_meta |>  
+#   filter(Cell_Unit %in% cu.map$Cell_Unit) |> 
+#   arrange(match(Cell_Unit, cu.map$Cell_Unit))
+# 
+# data.table::fwrite(aru_filt, here("./Data/ARU_Meta_120_FilteredOcc.csv"))
 
 ## Select the variables we are interested in for detection and occupancy
 aru_meta <- aru_meta |> select(Cell_Unit, 
