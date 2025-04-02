@@ -26,6 +26,7 @@ options(scipen = 6, digits = 4)
 
 ## Package Loading
 library(dplyr)
+library(stringr)
 library(ggplot2)
 library(here)
 library(sf)
@@ -44,7 +45,7 @@ library(coda)
 ## MCMC Samples
 load("R:/Users/skeyser/Postdoc/MSOM_Ragged_JAGS_Zout_95thresh.Rdata")
 str(out3)
-all3 <- as.matrix(out3)
+all3 <- coda::as.matrix(out3)
 rm(out3)
 
 ## Occupancy model data
@@ -124,15 +125,26 @@ aru_filter <- aru_meta |> select(Cell_Unit,
                                fire2_5yr_lowmod_prop, fire2_5yr_high_prop,
                                fire6_10yr_lowmod_prop, fire6_10yr_high_prop, 
                                fire11_35yr_lowmod_prop, fire11_35yr_high_prop,
+                               fire1yr_cbi_mn, 
+                               fire2_5yr_cbi_mn, 
+                               fire6_10yr_cbi_mn, 
+                               fire11_35yr_cbi_mn,
                                stage = standage_f3_mn, cancov = cpycovr_f3_mn) |> 
   filter(Cell_Unit %in% cu.map$Cell_Unit) |> 
   arrange(match(Cell_Unit, cu.map$Cell_Unit)) |> 
   mutate(fire1_5yr_lowmod_prop = fire1yr_lowmod_prop + fire2_5yr_lowmod_prop,
-         fire1_5yr_high_prop = fire1yr_high_prop + fire2_5yr_high_prop) |> 
-  select(-fire1yr_high_prop, -fire1yr_lowmod_prop, -fire2_5yr_lowmod_prop, -fire2_5yr_high_prop) |> 
+         fire1_5yr_high_prop = fire1yr_high_prop + fire2_5yr_high_prop,
+         fire1_5yr_cbi_mn = (fire1yr_cbi_mn + fire2_5yr_cbi_mn) / 2) |> 
+  select(-fire1yr_high_prop, 
+         -fire1yr_lowmod_prop, 
+         -fire2_5yr_lowmod_prop, 
+         -fire2_5yr_high_prop,
+         -fire1yr_cbi_mn,
+         -fire2_5yr_cbi_mn) |> 
   select(Cell_Unit:ele, stage, cancov, 
          fire1_5yr_lowmod_prop, fire6_10yr_lowmod_prop, fire11_35yr_lowmod_prop,
-         fire1_5yr_high_prop, fire6_10yr_high_prop, fire11_35yr_high_prop)
+         fire1_5yr_high_prop, fire6_10yr_high_prop, fire11_35yr_high_prop,
+         fire1_5yr_cbi_mn, fire6_10yr_cbi_mn, fire11_35yr_cbi_mn)
 
 ## Package all the data as a list
 OccData <- list(Z.posterior = z.samp,
@@ -147,4 +159,4 @@ var.to.keep <- "OccData"
 
 rm(list = setdiff(ls(), var.to.keep))
 
-save(OccData, file = here("./Data/JAGS_Data/Occ2GDM_Data_95thresh.Rdata"))
+save(OccData, file = here("./Data/JAGS_Data/Occ2GDM_Data_95thresh_CBI.Rdata"))
