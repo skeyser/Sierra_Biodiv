@@ -30,6 +30,7 @@ library(stringr)
 library(ggplot2)
 library(here)
 library(abind)
+library(lubridate)
 
 ## -------------------------------------------------------------
 
@@ -41,6 +42,7 @@ library(abind)
 
 ## Load in the bird data for 2021
 load(here("./Data/Generated_DFs/Occ_Mod_Data/95_Thresh_Cutoff/2021_OccSppList.RData"))
+load(here("./Data/Generated_DFs/Occ_Mod_Data/Flocker/2021_OccSppList.RData"))
 
 ## ADDED removing species and name change for PACFLY
 sp.det.list <- sp.det.list[which(!names(sp.det.list) %in% c("Red-tailed Hawk",
@@ -67,6 +69,10 @@ length(colnames(sp.det.list[[1]])) - 1
 ## Array for the data
 ## D1 (i) = Site, D2 (j) = Sampling Date, D3 (k) = species
 samp.cols <- colnames(sp.det.list[[1]])[str_detect(colnames(sp.det.list[[1]]), "\\d")]
+samp.cols <- as.Date(samp.cols, format = "%Y-%m-%d")
+#samp.period <- interval(ymd("2021-06-01"), ymd("2021-06-30"))
+#samp.ind <- as.character(samp.cols[which(samp.cols %within% samp.period)])
+#sp.det.list <- lapply(sp.det.list, function(x) x |> select(1, all_of(samp.ind)))
 
 ## Create different sampling periods
 second_samp <- function(DAT, interval, id_col, eff = F, e.var = "Days"){
@@ -114,7 +120,10 @@ table(nsurveys <- apply(y[,,1], 1, function(x) sum(!is.na(x))))
 ## 9 species
 tmp <- apply(y, c(1,3), max, na.rm = TRUE)
 tmp[tmp == -Inf] <- NA
+
+## Naive Occupancy Estimates
 sort(obs.occ <- apply(tmp, 2, sum, na.rm = TRUE))
+sort(obs.occ <- apply(tmp, 2, sum, na.rm = TRUE) / nrow(tmp))
 
 drop.sp <- which(obs.occ == 0)
 y <- y[,,-drop.sp]
