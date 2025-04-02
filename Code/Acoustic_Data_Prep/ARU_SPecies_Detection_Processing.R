@@ -115,19 +115,16 @@ aru_det_file_gen(det_dir = "C:/Users/srk252/Documents/Rprojs/Sierra_Biodiv/Data/
                  seas_format = F,
                  seas_outdir = "C:/Users/srk252/Documents/Rprojs/Sierra_Biodiv/Data/Generated_DFs/Seasonal_Summaries/",
                  occ_format = T,
-                 occ_outdir = "C:/Users/srk252/Documents/Rprojs/Sierra_Biodiv/Data/Generated_DFs/Occ_Mod_Data/95_Thresh_Cutoff/",
+                 occ_outdir = "C:/Users/srk252/Documents/Rprojs/Sierra_Biodiv/Data/Generated_DFs/Occ_Mod_Data/Flocker/",
                  eff_file = T,
                  coord_link = T,
                  d_thresh = thresh,
                  thresh_scale = "Conf",
-                 thresh_cut = "95",
+                 thresh_cut = "90",
                  time_format = "ymd",
                  no_dets = 2,
-                 binary = T,
-                 date_range = c("2021-05-15", "2021-07-15"
-                                #"2022-06-01", "2022-07-30",
-                                #"2023-06-01", "2023-07-30"
-                                ),
+                 binary = F,
+                 date_range = c("2021-06-01", "2021-06-30"),
                  eff_site_name = "Cell_U",
                  eff_filter = 10,
                  verbose = F)
