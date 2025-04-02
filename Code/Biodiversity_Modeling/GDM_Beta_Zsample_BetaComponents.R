@@ -30,10 +30,11 @@ library(dplyr)
 library(ggplot2)
 library(here)
 library(purrr)
+library(tidyr)
 
 ## GDM
 library(gdm)
-library(betapart)
+library(adespatial)
 
 ## -------------------------------------------------------------
 
