@@ -312,3 +312,104 @@ fwd.sel$call
 
 ## Test for significant drivers
 mout.sig <- anova.cca(mout2, step = 1000, by = "term")
+
+# Function for dbRDA sensitivity analysis with distance matrix
+dbrda_sensitivity <- function(dist_matrix, env_data, 
+                              size_seq=NULL, n_iter=100,
+                              sqrt_dist=FALSE, add=NULL) {
+  
+  require(vegan)
+  
+  # If size sequence not specified, create default
+  if(is.null(size_seq)) {
+    n <- nrow(as.matrix(dist_matrix))
+    size_seq <- round(seq(n/4, n, length.out=10))
+  }
+  
+  # Store results
+  results <- data.frame(
+    sample_size = numeric(),
+    iteration = numeric(),
+    R2 = numeric(),
+    adj_R2 = numeric(),
+    F_stat = numeric(),
+    p_value = numeric()
+  )
+  
+  # Run sensitivity analysis
+  for(size in size_seq) {
+    for(i in 1:n_iter) {
+      # Random subsample
+      samp <- sample(1:nrow(as.matrix(dist_matrix)), size=size)
+      
+      # Subset distance matrix and environmental data
+      dist_sub <- as.dist(as.matrix(dist_matrix)[samp, samp])
+      env_sub <- env_data[samp,]
+      env_sub <- env_sub |> select(contains("scaled"))
+      
+      # Run dbRDA
+      dbrda_result <- dbrda(dist_sub ~ ., data=env_sub, 
+                            sqrt.dist=sqrt_dist, add=add)
+      
+      # Extract results
+      results <- rbind(results, data.frame(
+        sample_size = size,
+        iteration = i,
+        R2 = RsquareAdj(dbrda_result)$r.squared,
+        adj_R2 = RsquareAdj(dbrda_result)$adj.r.squared,
+        F_stat = anova(dbrda_result)$F[1],
+        p_value = anova(dbrda_result)$Pr[1]
+      ))
+    }
+  }
+  
+  return(results)
+}
+
+sensRDA <- dbrda_sensitivity(dist_matrix = zmat_turn, 
+                             env_data = env.test, 
+                             size_seq = nrow(zmat_turn)*seq(0.25,1,0.25),
+                             n_iter = 5)
+
+# Plot function remains the same
+plot_sensitivity <- function(sensitivity_results) {
+  require(ggplot2)
+  
+  # Calculate means and CI for each sample size
+  summary_stats <- aggregate(
+    cbind(R2, adj_R2) ~ sample_size, 
+    data=sensitivity_results,
+    FUN=function(x) c(mean=mean(x), 
+                      ci_lower=quantile(x, 0.025),
+                      ci_upper=quantile(x, 0.975))
+  )
+  
+  # Reshape for plotting
+  summary_stats <- data.frame(
+    sample_size = summary_stats$sample_size,
+    R2_mean = summary_stats$R2[,1],
+    R2_lower = summary_stats$R2[,2],
+    R2_upper = summary_stats$R2[,3],
+    adjR2_mean = summary_stats$adj_R2[,1],
+    adjR2_lower = summary_stats$adj_R2[,2],
+    adjR2_upper = summary_stats$adj_R2[,3]
+  )
+  
+  # Create plot
+  p <- ggplot(summary_stats, aes(x=sample_size)) +
+    geom_ribbon(aes(ymin=R2_lower, ymax=R2_upper), alpha=0.2) +
+    geom_line(aes(y=R2_mean, color="R2")) +
+    geom_ribbon(aes(ymin=adjR2_lower, ymax=adjR2_upper), alpha=0.2) +
+    geom_line(aes(y=adjR2_mean, color="Adjusted R2")) +
+    labs(x="Sample Size", y="R-squared", color="Measure") +
+    theme_bw()
+  
+  return(p)
+}
+
+plot_sensitivity(sensRDA)
+
+# Example usage:
+# sens_results <- dbrda_sensitivity(your_dist_matrix, env_data, 
+#                                 sqrt_dist=TRUE, add="lingoes")
+# plot_sensitivity(sens_results)
