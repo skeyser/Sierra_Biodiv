@@ -3,6 +3,26 @@
     "Version": "4.4.1",
     "Repositories": [
       {
+        "Name": "BioCsoft",
+        "URL": "https://bioconductor.org/packages/3.20/bioc"
+      },
+      {
+        "Name": "BioCann",
+        "URL": "https://bioconductor.org/packages/3.20/data/annotation"
+      },
+      {
+        "Name": "BioCexp",
+        "URL": "https://bioconductor.org/packages/3.20/data/experiment"
+      },
+      {
+        "Name": "BioCworkflows",
+        "URL": "https://bioconductor.org/packages/3.20/workflows"
+      },
+      {
+        "Name": "BioCbooks",
+        "URL": "https://bioconductor.org/packages/3.20/books"
+      },
+      {
         "Name": "CRAN",
         "URL": "https://packagemanager.posit.co/cran/latest"
       }
@@ -142,6 +162,16 @@
         "methods"
       ],
       "Hash": "065ae649b05f1ff66bb0c793107508f5"
+    },
+    "DEoptimR": {
+      "Package": "DEoptimR",
+      "Version": "1.1-3",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Requirements": [
+        "stats"
+      ],
+      "Hash": "72f87e0092e39384aee16df8d67d7410"
     },
     "Deriv": {
       "Package": "Deriv",
@@ -780,6 +810,22 @@
       ],
       "Hash": "543776ae6848fde2f48ff3816d0628bc"
     },
+    "bayesm": {
+      "Package": "bayesm",
+      "Version": "3.1-6",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Requirements": [
+        "R",
+        "Rcpp",
+        "RcppArmadillo",
+        "grDevices",
+        "graphics",
+        "stats",
+        "utils"
+      ],
+      "Hash": "6377d4336f5c291b8a89d75fb8074828"
+    },
     "bayesplot": {
       "Package": "bayesplot",
       "Version": "1.11.1",
@@ -1232,6 +1278,25 @@
       "Source": "Repository",
       "Repository": "CRAN",
       "Hash": "5d8225445acb167abf7797de48b2ee3c"
+    },
+    "compositions": {
+      "Package": "compositions",
+      "Version": "2.0-8",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Requirements": [
+        "MASS",
+        "R",
+        "bayesm",
+        "grDevices",
+        "graphics",
+        "methods",
+        "robustbase",
+        "stats",
+        "tensorA",
+        "utils"
+      ],
+      "Hash": "3b211bb5b96b6920a112ba26260dbe16"
     },
     "conflicted": {
       "Package": "conflicted",
@@ -2042,6 +2107,32 @@
       ],
       "Hash": "66488692cb8621bc78df1b9b819497a6"
     },
+    "ggtern": {
+      "Package": "ggtern",
+      "Version": "3.5.0",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Requirements": [
+        "MASS",
+        "R",
+        "compositions",
+        "ggplot2",
+        "grid",
+        "gridExtra",
+        "gtable",
+        "hexbin",
+        "latex2exp",
+        "lattice",
+        "methods",
+        "plyr",
+        "proto",
+        "rlang",
+        "scales",
+        "stats",
+        "utils"
+      ],
+      "Hash": "45e0550da7fd8811c00622a42cefc8e6"
+    },
     "gh": {
       "Package": "gh",
       "Version": "1.4.1",
@@ -2244,6 +2335,23 @@
         "rprojroot"
       ],
       "Hash": "24b224366f9c2e7534d2344d10d59211"
+    },
+    "hexbin": {
+      "Package": "hexbin",
+      "Version": "1.28.5",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Requirements": [
+        "R",
+        "grDevices",
+        "graphics",
+        "grid",
+        "lattice",
+        "methods",
+        "stats",
+        "utils"
+      ],
+      "Hash": "10a44851f04ff2d0e26b1c84c38d914a"
     },
     "highr": {
       "Package": "highr",
@@ -2620,6 +2728,17 @@
         "rlang"
       ],
       "Hash": "a3e051d405326b8b0012377434c62b37"
+    },
+    "latex2exp": {
+      "Package": "latex2exp",
+      "Version": "0.9.6",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Requirements": [
+        "magrittr",
+        "stringr"
+      ],
+      "Hash": "f0173e0120a278700d48998e5a93a000"
     },
     "lattice": {
       "Package": "lattice",
@@ -3920,6 +4039,21 @@
         "stats"
       ],
       "Hash": "2dbd130a701df2cd4b40987815376637"
+    },
+    "robustbase": {
+      "Package": "robustbase",
+      "Version": "0.99-4-1",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Requirements": [
+        "DEoptimR",
+        "R",
+        "graphics",
+        "methods",
+        "stats",
+        "utils"
+      ],
+      "Hash": "c4aa31d38787b63bddb050b175f52e3d"
     },
     "rockchalk": {
       "Package": "rockchalk",
