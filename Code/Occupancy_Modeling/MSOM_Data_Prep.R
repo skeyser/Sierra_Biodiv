@@ -324,29 +324,74 @@ aru_meta$Cell_Unit <- paste0(aru_meta$cell_id, "_", aru_meta$unit_numbe)
 
 ## Select the variables we are interested in for detection and occupancy
 aru_meta <- aru_meta |> select(Cell_Unit, 
-                               utme, utmn,
-                               X, Y,
-                               topo_elev, topo_tpi,
-                               tmx_bcm_mn, ppt_bcm_mn,
-                               fire1yr_cbi_mn, fire2_5yr_cbi_mn,
-                               fire6_10yr_cbi_mn, fire11_35yr_cbi_mn,
-                               standage_f3_mn, cpycovr_f3_mn) |> 
+                               utme, 
+                               utmn,
+                               X, 
+                               Y,
+                               topo_elev, 
+                               topo_tpi,
+                               tmx_bcm_mn, 
+                               ppt_bcm_mn,
+                               fire1yr_cbi_mn, 
+                               fire2_5yr_cbi_mn,
+                               fire6_10yr_cbi_mn, 
+                               fire11_35yr_cbi_mn,
+                               fire1yr_high_prop, 
+                               fire1yr_lowmod_prop,
+                               fire2_5yr_high_prop, 
+                               fire2_5yr_lowmod_prop,
+                               fire6_10yr_high_prop, 
+                               fire6_10yr_lowmod_prop,
+                               fire11_35yr_high_prop, 
+                               fire11_35yr_lowmod_prop,
+                               standage_f3_mn, 
+                               cpycovr_f3_mn, 
+                               cc_cfo_mn, 
+                               cc_cfo_sd
+                               ) |> 
   filter(Cell_Unit %in% cu.map$Cell_Unit) |> 
-  arrange(match(Cell_Unit, cu.map$Cell_Unit))
+  arrange(match(Cell_Unit, cu.map$Cell_Unit)) |>
+  mutate(fire1_5yr_cbi_mn = (fire1yr_cbi_mn + fire2_5yr_cbi_mn)/2,
+         fire1_5yr_high_prop = (fire1yr_high_prop + fire2_5yr_high_prop)/2,
+         fire1_5yr_lowmod_prop = (fire1yr_lowmod_prop + fire2_5yr_lowmod_prop)/2)
 
 ## Scale the preds of interest
 {
+## Spatial data
 utme <- as.vector(scale(aru_meta$utme))
 utmn <- as.vector(scale(aru_meta$utmn))
+Lat <- as.vector(scale(aru_meta$Y))
+Long <- as.vector(scale(aru_meta$X))
+
+## Elevation and climate data
 ele <- as.vector(scale(aru_meta$topo_elev))
 ppt <- as.vector(scale(aru_meta$ppt_bcm_mn))
 tmx <- as.vector(scale(aru_meta$tmx_bcm_mn))
+
+## Original CBI mean data
 cbi1 <- as.vector(scale(aru_meta$fire1yr_cbi_mn))
+cbi1_5 <- as.vector(scale(aru_meta$fire1_5yr_cbi_mn))
 cbi2_5 <- as.vector(scale(aru_meta$fire2_5yr_cbi_mn))
 cbi6_10 <- as.vector(scale(aru_meta$fire6_10yr_cbi_mn))
 cbi11_35 <- as.vector(scale(aru_meta$fire11_35yr_cbi_mn))
+
+## Adding in the proportional fire data
+hsf_prop1 <- as.vector(scale(aru_meta$fire1yr_high_prop))
+hsf_prop1_5 <- as.vector(scale(aru_meta$fire1_5yr_high_prop))
+hsf_prop2_5 <- as.vector(scale(aru_meta$fire2_5yr_high_prop))
+hsf_prop6_10 <- as.vector(scale(aru_meta$fire6_10yr_high_prop))
+hsf_prop11_35 <- as.vector(scale(aru_meta$fire11_35yr_high_prop))
+lmsf_prop1 <- as.vector(scale(aru_meta$fire1yr_lowmod_prop))
+lmsf_prop1_5 <- as.vector(scale(aru_meta$fire1_5yr_lowmod_prop))
+lmsf_prop2_5 <- as.vector(scale(aru_meta$fire2_5yr_lowmod_prop))
+lmsf_prop6_10 <- as.vector(scale(aru_meta$fire6_10yr_lowmod_prop))
+lmsf_prop11_35 <- as.vector(scale(aru_meta$fire11_35yr_lowmod_prop))
+
+## Forest characteristics
 stage <- as.vector(scale(aru_meta$standage_f3_mn)) 
-cc <- as.vector(scale(aru_meta$cpycovr_f3_mn))
+cc_f3 <- as.vector(scale(aru_meta$cpycovr_f3_mn))
+cc_cfo <- as.vector(scale(aru_meta$cc_cfo_mn))
+cc_cfo_sd <- as.vector(scale(aru_meta$clc_cfo_sd))
 }
 
 ## -------------------------------------------------------------
