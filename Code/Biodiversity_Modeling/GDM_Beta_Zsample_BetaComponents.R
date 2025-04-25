@@ -47,7 +47,16 @@ dimnames(Z) <- list(NULL, OccData$ZcolNames, NULL)
 
 ## Take the environmental data
 aru_meta <- OccData$SiteMeta
-aru_meta <- aru_meta |> select(-X, -Y)
+aru_meta <- aru_meta |> 
+  select(-utme, -utmn) |> 
+  st_as_sf(coords = c("X", "Y"), crs = 4326) |> 
+  st_transform(crs = 3310) |> 
+  mutate(Lat = st_coordinates(geometry)[,2],
+         Long = st_coordinates(geometry)[,1]) |> 
+  st_drop_geometry()
+
+hist(aru_meta$Long)
+hist(aru_meta$Lat)
 
 ## -------------------------------------------------------------
 ##
@@ -113,22 +122,22 @@ for(i in 1:npost){
   ## Format the data for pairs - bioFormat = 3 accepts preformed D-mat
   gdmTab.brep <- formatsitepair(bioData = brep,
                                 bioFormat = 3,
-                                XColumn = "utme",
-                                YColumn = "utmn",
+                                XColumn = "Long",
+                                YColumn = "Lat",
                                 siteColumn = "Cell_Unit",
                                 predData = envTab)
   
   gdmTab.brich <- formatsitepair(bioData = brich,
                                  bioFormat = 3,
-                                 XColumn = "utme",
-                                 YColumn = "utmn",
+                                 XColumn = "Long",
+                                 YColumn = "Lat",
                                  siteColumn = "Cell_Unit",
                                  predData = envTab)
   
   gdmTab.btotal <- formatsitepair(bioData = btotal,
                                   bioFormat = 3,
-                                  XColumn = "utme",
-                                  YColumn = "utmn",
+                                  XColumn = "Long",
+                                  YColumn = "Lat",
                                   siteColumn = "Cell_Unit",
                                   predData = envTab)
   
