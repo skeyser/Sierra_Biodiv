@@ -293,7 +293,8 @@ ac_det_filter <- function(d,
               thresh_cut = thresh_cut,
               date_range = date_range,
               no_dets = no_dets,
-              binary = binary))
+              binary = binary,
+              effort_filter = eff_filter))
   
 } #function
 
@@ -533,12 +534,13 @@ aru_det_file_gen <- function(det_dir = c("C:/Users/srk252/Documents/Rprojs/Sierr
                               End_date = filter.tmp$date_range[2],
                               Survey_Year = lubridate::year(filter.tmp$date_range[1]),
                               NumberDetections = filter.tmp$no_dets,
-                              Binarized = filter.tmp$binary)
+                              Binarized = filter.tmp$binary,
+                              Effort_Filter = filter.tmp$effort_filter)
       }
       
       ## Create metadata file for the subsetted effort file
       if(j == length(sp.det.files) & eff_file){
-        write.csv(filter.tmp$eff.dat, file = paste0(occ.dir.tmp, yr.tmp, "_OccEffortFileSubset.csv"))
+        write.csv(filter.tmp$eff.dat, file = paste0(occ.dir.tmp, yr.tmp, "_", thresh_cut, thresh_scale, "_OccEffortFileSubset.csv"))
       }
       
     }
@@ -557,8 +559,11 @@ aru_det_file_gen <- function(det_dir = c("C:/Users/srk252/Documents/Rprojs/Sierr
       cat("Saving list of species filtered detections DFs to .RData file for year:", yr.tmp)
       save(sp.det.list, file = paste0(occ.dir.tmp,
                                       yr.tmp,
+                                      "_", 
+                                      thresh_cut, 
+                                      thresh_scale,
                                       "_OccSppList.RData"))
-      write.csv(meta.df, file = paste0(occ.dir.tmp, yr.tmp, "_OccMetaFilterParams.csv"))
+      write.csv(meta.df, file = paste0(occ.dir.tmp, yr.tmp, "_", thresh_cut, thresh_scale, "_OccMetaFilterParams.csv"))
     }
     
     ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -691,4 +696,64 @@ aru_det_file_gen <- function(det_dir = c("C:/Users/srk252/Documents/Rprojs/Sierr
 ## End Section: ARU Data Generation function
 ##
 ## -------------------------------------------------------------
+
+## -------------------------------------------------------------
+##
+## Begin Section: Query Spatial Locations from CAbioacoustics
+##
+## -------------------------------------------------------------
+
+aru_sf_query <- function(years = c(2021, 2022, 2023, 2024),
+                         .study_type = "Sierra Monitoring",
+                         .is_invalid = 0){
+# connect to database -----------------------------------------------------
+require(CAbioacoustics)
+
+# create connection; credentials stored in keyring
+cb_connect_db()
+
+# see that connection worked and list database tables
+DBI::dbListTables(conn)
+
+# just sierra monitoring deployments
+deployments_df <-
+  tbl(conn, "acoustic_field_visits") |>
+  filter(survey_year %in% years & study_type == .study_type & is_invalid == .is_invalid) |>
+  select(
+    id,
+    study_type,
+    group_id,
+    visit_id,
+    cell_id,
+    unit_number,
+    deployment_name,
+    survey_year,
+    deploy_date,
+    recover_date,
+    utm_zone,
+    utme,
+    utmn
+  ) |>
+  # pull into memory
+  collect()
+
+# disconnect now
+cb_disconnect_db()
+
+
+# convert ARU data to simple feature point object -------------------------
+
+# make sf, convert to WGS 84
+deployments_sf <-
+  deployments_df |>
+  group_split(utm_zone) |>
+  map_dfr(cb_make_aru_sf) |> 
+  mutate(Long = st_coordinates(geometry)[,1],
+         Lat = st_coordinates(geometry)[,2]) |>
+  mutate(Cell_Unit = paste0(cell_id, "_", unit_number))
+
+## Return the df
+return(deployments_sf)
+
+}
 
