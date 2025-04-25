@@ -3,3 +3,7 @@
 *.docx
 Figures/
 *.pdf
+Markdowns/
+*.csv
+*.txt
+*.xlsx
