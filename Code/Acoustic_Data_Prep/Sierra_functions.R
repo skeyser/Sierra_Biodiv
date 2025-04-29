@@ -59,6 +59,9 @@ library(here)
 ac_det_filter <- function(d,
                           d_thresh,
                           thresh_scale = "Conf",
+                          species_thresh_cut = NULL,
+                          thresh_transform = FALSE,
+                          thresh_trans_dir = "conf2logit",
                           thresh_cut = "99",
                           time_format = "ymd",
                           species,
@@ -74,8 +77,81 @@ ac_det_filter <- function(d,
   ## Retrieve the threshold from the species of interest
   sp.thresh <- d_thresh[d_thresh$species == species, ]
   
+  ## Add a component for species-specific thresholds
+  ## species_thresh_cut should be a column in a DF with the best threshold
+  ## matching d_thresh and thresh_scale
+  # if(!is.null(species_thresh_cut)){
+  #   if(any(str_detect(colnames(sp.thresh), species_thresh_cut))){
+  #     best_thresh <- sp.thresh[, str_detect(colnames(sp.thresh), species_thresh_cut)]
+  #     
+  #     if(thresh_scale == "Conf" | (thresh_transform & thresh_trans_dir == "logit2conf")){
+  #       new_thresh_cut <- as.character(pull(best_thresh |> select(contains("conf"))))
+  #       # Only update thresh_cut if new value is not NA
+  #       if(!is.na(new_thresh_cut)) thresh_cut <- new_thresh_cut
+  #     } else if(thresh_scale == "Raw" | (thresh_transform & thresh_trans_dir == "conf2logit")){
+  #       new_thresh_cut <- as.character(pull(best_thresh[,str_detect(colnames(best_thresh), "\\.r$")]))
+  #     }
+  #     
+  #     if(!is.na(new_thresh_cut)) {
+  #       thresh_cut <- new_thresh_cut
+  #       print(paste("Best threshold option selected. Optimal threshold for", species, "is", thresh_cut))
+  #     } else {
+  #       print(paste("Warning: Threshold calculation produced NA for", species, "using function default value:", thresh_cut))
+  #     }
+  #   }
+  #   thresh_cut_meta <- data.frame(Default_Thresh_Scale = thresh_scale,
+  #                                 New_Thresh_Cut = thresh_cut,
+  #                                 Thresh_Transform = thresh_transform,
+  #                                 Thresh_Tran_Direction = thresh_trans_dir)
+  # }
+  
+  if(!is.null(species_thresh_cut)){
+    if(any(str_detect(colnames(sp.thresh), species_thresh_cut))){
+      best_thresh <- sp.thresh[, str_detect(colnames(sp.thresh), species_thresh_cut)]
+      
+      # Scenario 1: thresh_scale is "Conf" and no transformation
+      if(thresh_scale == "Conf" && !thresh_transform) {
+        new_thresh_cut <- as.character(pull(best_thresh |> select(contains("conf"))))
+        flag <- "No transformation. Taking confidence score threshold."
+      }
+      # Scenario 2: thresh_scale is "Raw" and no transformation
+      else if(thresh_scale == "Raw" && !thresh_transform) {
+        new_thresh_cut <- as.character(pull(best_thresh[,str_detect(colnames(best_thresh), "\\.r$")]))
+        flag <- "No transformation. Taking raw score threshold."
+      }
+      # Scenario 4: thresh_scale is "Conf" and transformation from conf to logit
+      else if(thresh_scale == "Conf" && thresh_transform && thresh_trans_dir == "conf2logit") {
+        new_thresh_cut <- as.character(pull(best_thresh[,str_detect(colnames(best_thresh), "\\.r$")]))
+        flag <- "Transformation conf2logit. Taking raw score threshold."
+      }
+      # Scenario 4: thresh_scale is "Raw" and transformation from logit to conf
+      else if(thresh_scale == "Raw" && thresh_transform && thresh_trans_dir == "logit2conf") {
+        new_thresh_cut <- as.character(pull(best_thresh |> select(contains("conf"))))
+        flag <- "Transformation logit2conf. Taking confidence score threshold."
+      }
+      
+      if(!is.na(new_thresh_cut)) {
+        thresh_cut <- new_thresh_cut
+        message(paste("Best threshold option selected. Optimal threshold for", species, "is", thresh_cut))
+        flag2 <- "Species Thresh"
+      } else {
+        message(paste("Warning: Threshold calculation produced NA for", species, "using function default value:", thresh_cut))
+        flag2 <- "Default Thresh"
+      }
+    }
+    thresh_cut_meta <- data.frame(Species = species,
+                                  Default_Thresh_Scale = thresh_scale,
+                                  Thresh_Used = thresh_cut,
+                                  Thresh_Transform = thresh_transform,
+                                  Thresh_Tran_Direction = thresh_trans_dir,
+                                  Flag = flag,
+                                  Flag2 = flag2)
+  } else {thresh_cut_meta <- NA}
+  
   ## Check the threshold type
-  if (thresh_scale == "Conf") {
+  ## Add in a line for direct transformation of the confidence scores
+  ## to logit
+  if (thresh_scale == "Conf" & isFALSE(thresh_transform)) {
     tmp.cols <- which(stringr::str_detect(colnames(sp.thresh), pattern = "conf"))
     tmp.cols <- sp.thresh[, tmp.cols]
     if (all(stringr::str_detect(colnames(tmp.cols), thresh_cut))) {
@@ -84,7 +160,7 @@ ac_det_filter <- function(d,
     } else {
       tmp.thresh <- pull(tmp.cols[which(stringr::str_detect(colnames(tmp.cols), thresh_cut))])
     }
-  } else if (thresh_scale == "Raw") {
+  } else if (thresh_scale == "Raw" & isFALSE(thresh_transform)) {
     tmp.cols <- which(
       stringr::str_detect(colnames(sp.thresh), pattern = "(cutoff)([0-9]+)(.r$)|(cutoff)([0-9]+)(raw$)")
     )
@@ -94,6 +170,28 @@ ac_det_filter <- function(d,
       tmp.thresh <- NA
     } else {
       tmp.thresh <- pull(tmp.cols[which(stringr::str_detect(colnames(tmp.cols), thresh_cut))])
+    }
+  } else if (thresh_scale == "Conf" & isTRUE(thresh_transform)) {
+    tmp.cols <- which(
+      stringr::str_detect(colnames(sp.thresh), pattern = "(cutoff)")
+    )
+    tmp.cols <- sp.thresh[, tmp.cols]
+    if (all(stringr::str_detect(colnames(tmp.cols), thresh_cut))) {
+      warning("Threshold not named in threshold dataframe. Check column names and 'thresh_cut'.")
+      tmp.thresh <- NA
+    } else {
+      tmp.thresh <- tmp.cols[which(stringr::str_detect(colnames(tmp.cols), thresh_cut))]
+    }
+  } else if (thresh_scale == "Raw" & isTRUE(thresh_transform)) {
+    tmp.cols <- which(
+      stringr::str_detect(colnames(sp.thresh), pattern = "(cutoff)")
+    )
+    tmp.cols <- sp.thresh[, tmp.cols]
+    if (all(stringr::str_detect(colnames(tmp.cols), thresh_cut))) {
+      warning("Threshold not named in threshold dataframe. Check column names and 'thresh_cut'.")
+      tmp.thresh <- NA
+    } else {
+      tmp.thresh <- tmp.cols[which(stringr::str_detect(colnames(tmp.cols), thresh_cut))]
     }
   }
   
@@ -170,6 +268,26 @@ ac_det_filter <- function(d,
     ## subset the columns of interest and return 'd'
     d <- d |>
       select(all_of(c(other.cols, date.cols)))
+  }
+  
+  ## Add in the transformation
+  if(thresh_transform){
+    conf2logit <- function(x) { x / (1-x) }
+    logit2conf <- function(x) { 1/(1 + exp(-x)) }
+    if(thresh_trans_dir == "conf2logit"){
+      d <- d |> 
+        mutate(across(.cols = all_of(date.cols), as.numeric)) |> 
+        mutate(across(.cols = all_of(date.cols), conf2logit))
+      
+      tmp.thresh <- tmp.thresh |> select(!contains("_conf")) |> pull()
+      
+    } else if(thresh_trans_dir == "logit2conf"){
+      d <- d |> 
+        mutate(across(.cols = all_of(date.cols), as.numeric)) |> 
+        mutate(across(.cols = all_of(date.cols), logit2conf))
+      
+      tmp.thresh <- tmp.thresh |> select(contains("_conf")) |> pull()
+    }
   }
   
   ## If binary
@@ -290,11 +408,15 @@ ac_det_filter <- function(d,
               eff.dat = eff,
               species = species,
               thresh_scale = thresh_scale,
+              thresh_transform = thresh_transform,
+              thresh_trans_dir = ifelse(thresh_transform, thresh_trans_dir, NA),
               thresh_cut = thresh_cut,
+              species_thresh_cut = species_thresh_cut,
               date_range = date_range,
               no_dets = no_dets,
               binary = binary,
-              effort_filter = eff_filter))
+              effort_filter = eff_filter,
+              thresh_cut_meta = thresh_cut_meta))
   
 } #function
 
@@ -327,7 +449,10 @@ aru_det_file_gen <- function(det_dir = c("C:/Users/srk252/Documents/Rprojs/Sierr
                              ## Passing to ac_det_filter()
                              d_thresh = thresh,
                              thresh_scale = "Conf",
+                             thresh_transform = FALSE,
+                             thresh_trans_dir = "conf2logit",
                              thresh_cut = "99",
+                             species_thresh_cut = NULL,
                              time_format = "ymd",
                              no_dets = 2,
                              binary = T,
@@ -493,6 +618,7 @@ aru_det_file_gen <- function(det_dir = c("C:/Users/srk252/Documents/Rprojs/Sierr
     ## Looping the ac_det_filter fxn over species
     ## Make a list to hold individual species
     sp.det.list <- vector(mode = "list", length = length(sp.det.files))
+    thresh_cut_meta_list <- vector(mode = "list", length = length(sp.det.files))
     
     ## Start j loop
     for(j in 1:length(sp.det.files)){
@@ -503,7 +629,10 @@ aru_det_file_gen <- function(det_dir = c("C:/Users/srk252/Documents/Rprojs/Sierr
       filter.tmp <- ac_det_filter(d = sp.det.files[[j]],
                                   d_thresh = d_thresh,
                                   thresh_scale = thresh_scale,
+                                  thresh_transform = thresh_transform,
+                                  thresh_trans_dir = thresh_trans_dir,
                                   thresh_cut = thresh_cut,
+                                  species_thresh_cut = species_thresh_cut,
                                   time_format = time_format,
                                   species = names(sp.det.files)[j],
                                   no_dets = no_dets,
@@ -523,13 +652,29 @@ aru_det_file_gen <- function(det_dir = c("C:/Users/srk252/Documents/Rprojs/Sierr
       names(sp.det.list)[j] <- filter.tmp$species
       
       ## Report species
-      cat("\nProcessed and adding:", names(sp.det.list)[j])
+      message("Processed and adding:", names(sp.det.list)[j])
+      
+      ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      ##
+      ## Subsection: Save metadata for species thresholds if needed
+      ##
+      ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      if(class(filter.tmp$thresh_cut_meta) == "data.frame"){
+        thresh_cut_meta_list[[j]] <- filter.tmp$thresh_cut_meta
+        if(j == length(sp.det.files)){
+          thresh_cut_meta_df <- do.call(rbind, thresh_cut_meta_list)
+          write.csv(thresh_cut_meta_df, file = paste0(occ.dir.tmp, yr.tmp, "_", thresh_cut, thresh_scale, "_OccSpeciesThreshMetaData.csv"))
+        }
+      }
       
       ## Create a metadata DF for the user so they can keep track 
       ## of fxn settings
       if(j == length(sp.det.files)){
         meta.df <- data.frame(Thresh_scale = filter.tmp$thresh_scale,
                               Thresh_cut = filter.tmp$thresh_cut,
+                              Species_Thresh = filter.tmp$species_thresh_cut,
+                              Thresh_transform = filter.tmp$thresh_transform,
+                              Thresh_trans_dir = filter.tmp$thresh_trans_dir,
                               Start_date = filter.tmp$date_range[1],
                               End_date = filter.tmp$date_range[2],
                               Survey_Year = lubridate::year(filter.tmp$date_range[1]),
@@ -543,7 +688,7 @@ aru_det_file_gen <- function(det_dir = c("C:/Users/srk252/Documents/Rprojs/Sierr
         write.csv(filter.tmp$eff.dat, file = paste0(occ.dir.tmp, yr.tmp, "_", thresh_cut, thresh_scale, "_OccEffortFileSubset.csv"))
       }
       
-    }
+    } #j closure
     
     names(sp.det.list)
     
