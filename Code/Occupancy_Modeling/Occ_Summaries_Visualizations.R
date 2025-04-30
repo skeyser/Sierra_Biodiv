@@ -49,6 +49,23 @@ logit2prob <- function(logit){
 load("R:/Users/skeyser/Postdoc/MSOM_Ragged_JAGS_Summaries_95thresh.Rdata")
 load("R:/Users/skeyser/Postdoc/MSOM_Ragged_JAGS_Zout_95thresh.Rdata")
 
+## -------------------------------------------------------------
+##
+## Begin Section: Posterior Predictive Checks
+##
+## -------------------------------------------------------------
+out2
+summary(out2)
+pp.check(out2, observed = 'fitY', simulated = 'fitY.new')
+pp.check(out2, observed = 'fitZ', simulated = 'fitZ.new')
+
+## -------------------------------------------------------------
+##
+## End Section: Posterior Predictive Checks
+##
+## -------------------------------------------------------------
+
+
 ## Model summary
 MCMCvis::MCMCsummary(out2, round = 2)
 
