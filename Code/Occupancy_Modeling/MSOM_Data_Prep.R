@@ -42,16 +42,73 @@ library(lubridate)
 
 ## Load in the bird data for 2021
 load(here("./Data/Generated_DFs/Occ_Mod_Data/95_Thresh_Cutoff/2021_OccSppList.RData"))
-load(here("./Data/Generated_DFs/Occ_Mod_Data/Flocker/2021_OccSppList.RData"))
+load(here("./Data/Generated_DFs/Occ_Mod_Data/Thresh_By_Species/2021_99Conf_OccSppList.RData"))
+
+
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##
+## Subsection: Handling problem species
+##
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+## *************************************************************
+##
+## Section Notes: Analytical decisions
+## 1. Remove raptors due to violation of occupancy assumptions (large home ranges)
+## 2. Remove Clark's nutcracker for simialr reason to raptors
+## 3. Combine acoustically similar species
+##  a. All sapsuckers need to be collapsed
+##  b. Plumbeous and Cassin's vireo 
+## 
+##
+## *************************************************************
 
 ## ADDED removing species and name change for PACFLY
 sp.det.list <- sp.det.list[which(!names(sp.det.list) %in% c("Red-tailed Hawk",
                                                             "Osprey",
                                                             "Red-shouldered Hawk",
-                                                            "Clark's Nutcracker"))]
+                                                            "Clark's Nutcracker",
+                                                            "American Kestrel"
+                                                            #"Wild Turkey",
+                                                            #"Sooty Grouse",
+                                                            #"Lawrence's Goldfinch",
+                                                            #"California Thrasher"
+))]
 
 names(sp.det.list)[which(names(sp.det.list) == "Pacific-slope Flycatcher")] <- "Western Flycatcher"
 
+combine_species <- function(species_list, species_to_combine, new_name, date_cols) {
+  # Start with first species
+  combined_df <- species_list[[species_to_combine[1]]]
+  
+  # Sum values across species
+  for(sp in species_to_combine[-1]) {
+    combined_df[, date_cols] <- combined_df[, date_cols] + species_list[[sp]][, date_cols]
+  }
+  
+  # Binarize: convert all values > 0 to 1
+  combined_df <- combined_df %>%
+    mutate(across(all_of(date_cols), ~as.integer(. > 0)))
+  
+  # Remove original species and add combined
+  species_list[species_to_combine] <- NULL
+  species_list[[new_name]] <- combined_df
+  
+  return(species_list)
+}
+
+## Combine Sapsuckers
+sp.det.list <- combine_species(species_list = sp.det.list, 
+                                species_to_combine = c("Red-breasted Sapsucker", "Red-naped Sapsucker", "Williamson's Sapsucker"), 
+                                new_name = "Sphyrapicus spp.",
+                                date_cols = colnames(sp.det.list[[1]])[str_detect(colnames(sp.det.list[[1]]), "Cell_Unit", negate = T)])
+
+## Combine vireos
+sp.det.list <- combine_species(species_list = sp.det.list, 
+                               species_to_combine = c("Cassin's Vireo", "Plumbeous Vireo"), 
+                               new_name = "Vireo spp.",
+                               date_cols = colnames(sp.det.list[[1]])[str_detect(colnames(sp.det.list[[1]]), "Cell_Unit", negate = T)])
+
+names(sp.det.list)
 ## Cell Unit mapping file
 cu.map <- data.frame(ID = 1:length(sp.det.list[[1]]$Cell_Unit), Cell_Unit = sp.det.list[[1]]$Cell_Unit)
 cu.map <- cu.map |>
@@ -139,7 +196,28 @@ tmp <- apply(y, c(1,3), max, na.rm = TRUE)
 tmp[tmp == "-Inf"] <- NA
 sort(C <- apply(tmp, 1, sum)) # Compute and print sorted species counts
 
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##
+## Subsection: Data checking
+##
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# Double check the different cutoffs for each species
+print(y)
+sp.ind <- which(dimnames(y)[[3]] == "Lawrence's Goldfinch")
 
+test <- y[,,sp.ind]
+test <- apply(test, 1, function(x) max(x, na.rm = T))
+test <- data.frame(Det = test, Cell_Unit = cu.map$Cell_Unit)
+nrow(test[test$Det > 0,])/nrow(test)
+
+## Load in the spatial coordinates
+source(here("./Code/Acoustic_Data_Prep/Sierra_functions.R"))
+aru_sf <- aru_sf_query(years = c(2021))
+aru_sf <- aru_sf |> 
+  filter(Cell_Unit %in% test$Cell_Unit) |>
+  left_join(test)
+
+mapview::mapview(aru_sf, zcol = "Det")
 
 ## -------------------------------------------------------------
 ##
@@ -160,7 +238,8 @@ pc1 <- morph$PCA1
 pc2 <- morph$PCA2
 
 ## Get the number of hours per survey for the detection covariate
-eff.dat <- read.csv(here("./Data/Generated_DFs/Occ_Mod_Data/95_Thresh_Cutoff/2021_OccEffortFileSubset.csv"))
+eff.dat <- read.csv(here("./Data/Generated_DFs/Occ_Mod_Data/95_Thresh_Cutoff/2021_OccEffortFileSubset.csv")) #clean
+eff.dat <- read.csv(here("./Data/Generated_DFs/Occ_Mod_Data/Thresh_By_Species/2021_99Conf_OccEffortFileSubset.csv"))
 eff.dat <- eff.dat[,-1]
 colnames(eff.dat) <- gsub("[[:punct:]]", "_", gsub("X", "", colnames(eff.dat)))
 
@@ -312,9 +391,10 @@ for(i in 1:dim(y)[3]){
 ## -------------------------------------------------------------
 
 ## Right now lets pull in the ARU meta data
-aru_meta <- readr::read_csv(here("Data/ARU_120m.csv"))
+aru_meta <- readr::read_csv(here("Data/ARU_120m.csv")) #clean
+aru_meta <- readr::read_csv(here("Data/ARU_120m_New.csv"))
 aru_meta$Cell_Unit <- paste0(aru_meta$cell_id, "_", aru_meta$unit_numbe)
-
+names(aru_meta)
 # ## Write the filtered DF
 # aru_filt <- aru_meta |>  
 #   filter(Cell_Unit %in% cu.map$Cell_Unit) |> 
@@ -345,7 +425,9 @@ aru_meta <- aru_meta |> select(Cell_Unit,
                                fire11_35yr_high_prop, 
                                fire11_35yr_lowmod_prop,
                                standage_f3_mn, 
-                               cpycovr_f3_mn, 
+                               cpycovr_f3_mn,
+                               ch_cfo_mn,
+                               ch_cfo_sd,
                                cc_cfo_mn, 
                                cc_cfo_sd
                                ) |> 
@@ -391,7 +473,9 @@ lmsf_prop11_35 <- as.vector(scale(aru_meta$fire11_35yr_lowmod_prop))
 stage <- as.vector(scale(aru_meta$standage_f3_mn)) 
 cc_f3 <- as.vector(scale(aru_meta$cpycovr_f3_mn))
 cc_cfo <- as.vector(scale(aru_meta$cc_cfo_mn))
-cc_cfo_sd <- as.vector(scale(aru_meta$clc_cfo_sd))
+cc_cfo_sd <- as.vector(scale(aru_meta$cc_cfo_sd))
+ch_cfo <- as.vector(scale(aru_meta$ch_cfo_mn))
+ch_cfo_sd <- as.vector(scale(aru_meta$ch_cfo_sd))
 }
 
 ## -------------------------------------------------------------
@@ -432,15 +516,19 @@ win.data.rag <- list(y = y_long,
                      beak.pc1 = pc1,
                      beak.pc2 = pc2,
                      utmn = utmn,
+                     lat = Lat,
                      ele = ele,
                      ppt = ppt,
                      tmx = tmx,
                      cbi1 = cbi1,
+                     cbi1_5 = cbi1_5,
                      cbi2_5 = cbi2_5,
                      cbi6_10 = cbi6_10,
                      cbi11_35 = cbi11_35,
                      stage = stage,
-                     cc = cc
+                     cc_f3 = cc_f3,
+                     cc_cfo = cc_cfo,
+                     ch_cfo = ch_cfo
                      )
 str(win.data.rag)
 #                  nrep = dim(y)[2],
@@ -479,4 +567,4 @@ rm(list = to_remove)
 rm(to_remove)
 
 ## Save the RDATA
-save.image(file = here("./Data/JAGS_Data/MSOM_Ragged_2021_95cut.RData"))
+save.image(file = here("./Data/JAGS_Data/MSOM_Ragged_2021_SpeciesThresh_975minMaxPrex_NewVars.RData"))
