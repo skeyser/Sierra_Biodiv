@@ -108,7 +108,7 @@ source(here("./Code/Acoustic_Data_Prep/Sierra_functions.R"))
 
 ## threshold file
 thresh <- readr::read_csv("./Data/Thresholds_2021_20230309.csv")
-thresh <- readr::read_csv("./Data/Thresholds_2021_20230309_BestThreshold_95min.csv")
+thresh <- readr::read_csv("./Data/Thresholds_2021_20230309_BestThreshold_975min.csv")
 
 ## Run the function
 aru_det_file_gen(det_dir = "C:/Users/srk252/Documents/Rprojs/Sierra_Biodiv/Data/Detections_By_Species/",
