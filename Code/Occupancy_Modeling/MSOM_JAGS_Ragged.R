@@ -35,6 +35,7 @@ library(MCMCvis)
 
 ## Load the data
 load(here("./Data/JAGS_Data/MSOM_Ragged_2021_95cut.RData"))
+load(here("./Data/JAGS_Data/MSOM_Ragged_2021_SpeciesThresh_975minMaxPrex_NewVars.RData"))
 
 ## -------------------------------------------------------------
 ##
@@ -212,6 +213,224 @@ cat("
       for(j in 1:N){ # rows y
         # Detection model on logit scale
         logit(p[j,k]) <- lp[k] + alpha1[k] * eff.hrs[j] + alpha2[k] * eff.jday[j] + alpha3[k] * pow(eff.jday[j], 2) #+ alpha4[k] * bmass[k]
+          
+        # Latent state and detection
+        # Site_id nested index
+        mup[j,k] <- z[site_id[j], k] * p[j,k]
+          
+        # Observation Bernoulli draw from z*p
+        y[j,k] ~ dbern(mup[j,k])
+        
+        # Model Assement via Chi-squared GoF
+        eval[j,k] <- mup[j,k]
+        E[j,k] <- pow((y[j,k] - eval[j,k]), 2) / (eval[j,k] + 0.5)
+        
+        # Replicated data for new comparison
+        y.new[j,k] ~ dbern(mup[j,k])
+        E.new[j,k] <- pow((y.new[j,k] - eval[j,k]), 2) / (eval[j,k] + 0.5)
+
+      }
+    }
+    
+    ########################################
+    ## Derived estimates of the community ##
+    ########################################
+    
+    # Species-specific # of occupied sites
+    for(k in 1:nspec){
+      Nocc.fs[k] <- sum(z[,k])
+    }
+    # Species Richness
+    for(i in 1:nsite){
+      Nsite[i] <- sum(z[i,])
+    }
+    
+    fitZ <- sum(EZ[,])
+    fitZ.new <- sum(EZ.new[,])
+    fitY <- sum(E[,])
+    fitY.new <- sum(E.new[,])
+    
+    }
+    ", fill = TRUE)
+sink()
+
+## -------------------------------------------------------------
+##
+## End Section: JAGS Model Code
+##
+## -------------------------------------------------------------
+
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##
+## Subsection: Model 2 w/ "ragged array" for NAs
+## New covariates subbing in for now
+##
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+sink("Code/JAGS_Models/Sierra_MSOM_Covs_NA_VarThresh_975min.txt")
+cat("
+    model {
+    
+    # Book-keeping: Ragged Array
+    # i = site 
+    # N = rep x site 
+    # k = species
+    # beta = coefficients for occupancy
+    # alpha = coefficient for detection
+    
+    ############
+    ## Priors ##
+    ############
+    
+    for(k in 1:nspec){
+      # Psi
+      # Species random psi intercept
+      lpsi[k] ~ dnorm(mu.lpsi, tau.lpsi) #uniform prior for species occ
+      
+      # Species random psi slopes
+      beta1[k] ~ dnorm(mu.beta1, tau.beta1)
+      beta2[k] ~ dnorm(mu.beta2, tau.beta2)
+      beta3[k] ~ dnorm(mu.beta3, tau.beta3)
+      beta4[k] ~ dnorm(mu.beta4, tau.beta4)
+      beta5[k] ~ dnorm(mu.beta5, tau.beta5)
+      beta6[k] ~ dnorm(mu.beta6, tau.beta6)
+      beta7[k] ~ dnorm(mu.beta7, tau.beta7)
+      beta8[k] ~ dnorm(mu.beta8, tau.beta8)
+      beta9[k] ~ dnorm(mu.beta9, tau.beta9)
+      #beta10[k] ~ dnorm(mu.beta10, tau.beta10)
+      #beta11[k] ~ dnorm(mu.beta11, tau.beta11)
+      
+      # p
+      # Species random p intercept
+      lp[k] ~ dnorm(mu.lp, tau.lp)
+      
+      # Species random p slope
+      alpha1[k] ~ dnorm(mu.alpha1, tau.alpha1)
+      alpha2[k] ~ dnorm(mu.alpha2, tau.alpha2)
+      alpha3[k] ~ dnorm(mu.alpha3, tau.alpha3)
+      #alpha4[k] ~ dnorm(mu.alpha4, tau.alpha4)
+    }
+    
+    #################
+    ## Hyperpriors ##
+    #################
+    
+    # Occ hypers
+    # Intercept
+    mu.lpsi ~ dnorm(0,0.01)
+    tau.lpsi <- pow(sd.lpsi, -2)
+    sd.lpsi ~ dunif(0,4) 
+    
+    # Latitude
+    mu.beta1 ~ dnorm(0,0.1)
+    tau.beta1 <- pow(sd.beta1, -2)
+    sd.beta1 ~ dunif(0, 4)
+    
+    # Elevation 
+    mu.beta2 ~ dnorm(0,0.1)
+    tau.beta2 <- pow(sd.beta2, -2)
+    sd.beta2 ~ dunif(0,4)
+    
+    # Elevation Poly
+    mu.beta3 ~ dnorm(0,0.1)
+    tau.beta3 <- pow(sd.beta3, -2)
+    sd.beta3 ~ dunif(0,4)
+    
+    # Precipitation
+    mu.beta4 ~ dnorm(0,0.1)
+    tau.beta4 <- pow(sd.beta4, -2)
+    sd.beta4 ~ dunif(0,4)
+    
+    # Fire Sev 1-5 years
+    mu.beta5 ~ dnorm(0,0.1)
+    tau.beta5 <- pow(sd.beta5, -2)
+    sd.beta5 ~ dunif(0,4)
+    
+    # Fire Sev 6-10 yrs
+    mu.beta6 ~ dnorm(0,0.1)
+    tau.beta6 <- pow(sd.beta6, -2)
+    sd.beta6 ~ dunif(0,4)
+    
+    # Fire Sev 11-35 yrs
+    mu.beta7 ~ dnorm(0,0.1)
+    tau.beta7 <- pow(sd.beta7, -2)
+    sd.beta7 ~ dunif(0,4)
+    
+    # Stand Age
+    mu.beta8 ~ dnorm(0,0.1)
+    tau.beta8 <- pow(sd.beta8, -2)
+    sd.beta8 ~ dunif(0,4)
+    
+    # Canopy Cover
+    mu.beta9 ~ dnorm(0,0.1)
+    tau.beta9 <- pow(sd.beta9, -2)
+    sd.beta9 ~ dunif(0,4)
+    
+    # Detection hypers
+    
+    # Intercept
+    mu.lp ~ dnorm(0, 0.1)
+    tau.lp <- pow(sd.lp, -2)
+    sd.lp ~ dunif(0, 2)
+    
+    # Number of hrs sampled (per secondary sample)
+    mu.alpha1 ~ dnorm(0, 0.1)
+    tau.alpha1 <- pow(sd.alpha1, -2)
+    sd.alpha1 ~ dunif(0, 2)
+    
+    # Number of hours sampled (per secondary sample)
+    mu.alpha2 ~ dnorm(0, 0.1)
+    tau.alpha2 <- pow(sd.alpha2, -2)
+    sd.alpha2 ~ dunif(0, 2)
+    
+    # JDay for sampling
+    mu.alpha3 ~ dnorm(0, 0.1)
+    tau.alpha3 <- pow(sd.alpha3, -2)
+    sd.alpha3 ~ dunif(0, 2)
+    
+    # Body mass for detection
+    #mu.alpha4 ~ dnorm(0, 0.1)
+    #tau.alpha4 <- pow(sd.alpha4, -2)
+    #sd.alpha4 ~ dunif(0, 2)
+    
+    #################################################
+    ## Ecological model for the latent process (z) ##
+    #################################################
+    # Add covariates for occupancy
+    for(k in 1:nspec){ #species loop
+      for(i in 1:nsite){ #site loop
+      # Occupancy model w/ covs
+      # Covs: Lat, Elevation, Elevation^2, Prop Burn Sev (PBS) 1yr, PBS 2-5, PBD 6-10, PBS 11-35, Stand Age, % Canopy Cover  
+      logit(psi[i,k]) <- lpsi[k] + beta1[k] * lat[i] + beta2[k] * ele[i] + beta3[k] * pow(ele[i], 2) + beta4[k] * ppt[i] + beta5[k] * cbi1_5[i] + beta6[k] * cbi6_10[i] +
+        beta7[k] * cbi11_35[i] + beta8[k] * cc_cfo[i] + beta9[k] * ch_cfo[i]
+      
+      # True latent state (Z-matrix)
+      z[i,k] ~ dbern(psi[i,k])
+      
+      # Model Assement via Chi-squared GoF
+      evalZ[i,k] <- psi[i,k]
+      EZ[i,k] <- pow((z[i,k] - evalZ[i,k]), 2) / (evalZ[i,k] + 0.5)
+        
+      # Replicated data for new comparison
+      z.new[i,k] ~ dbern(psi[i,k])
+      EZ.new[i,k] <- pow((z.new[i,k] - evalZ[i,k]), 2) / (evalZ[i,k] + 0.5)
+      
+      }
+    }
+    
+    ###################################################
+    ## Observation submodel for replicate det/nondet ##
+    ###################################################
+    
+    ## Observation Sub-model with nested indexing on sites
+    
+    # Significant NAs in the response for variable ARU start dates
+    # Detection heterogeneity is built into this model
+    # Detection Covs: Survey Hrs (sum across 6 day secondary sampling), Jdate (median per 6 day interval), Jdate^2
+    for(k in 1:nspec){ #columns y 
+      for(j in 1:N){ # rows y
+        # Detection model on logit scale
+        logit(p[j,k]) <- lp[k] + alpha1[k] * eff.hrs[j] + alpha2[k] * eff.jday[j] + alpha3[k] * pow(eff.jday[j], 2)
           
         # Latent state and detection
         # Site_id nested index
