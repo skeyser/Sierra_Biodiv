@@ -510,7 +510,6 @@ inits <- function() list(z = zst,
                          lp = rep(0.5, nspec),
                          alpha1 = rep(0, nspec),
                          alpha2 = rep(0, nspec),
-                         alpha3 = rep(0, nspec),
                          alpha3 = rep(0, nspec))
 
 ## Parameters to monitor
@@ -542,54 +541,53 @@ params1 <- c("mu.lpsi",
              "sd.alpha2",
              "mu.alpha3",
              "sd.alpha3",
-             #"mu.alpha4",
-             #"sd.alpha4",
              "Ntotal",
              "Nsite",
              "fitZ",
              "fitZ.new",
              "fitY",
              "fitY.new")
-# params2 <- c("mu.lpsi",
-#              "sd.lpsi",
-#              "mu.beta1",
-#              "sd.beta1",
-#              "mu.beta2",
-#              "sd.beta2",
-#              "mu.beta3",
-#              "sd.beta3",
-#              "mu.beta4",
-#              "sd.beta4",
-#              "mu.beta5",
-#              "sd.beta5",
-#              "mu.beta6",
-#              "sd.beta6",
-#              "mu.beta7",
-#              "sd.beta7",
-#              "mu.beta8",
-#              "sd.beta8",
-#              "mu.beta9",
-#              "sd.beta9",
-#              "lpsi",
-#              "beta1",
-#              "beta2",
-#              "beta3",
-#              "beta4",
-#              "beta5",
-#              "beta6",
-#              "beta7",
-#              "beta8",
-#              "beta9",
-#              "lp",
-#              "alpha1",
-#              "alpha2",
-#              "alpha3",
-#              "z")
+
+params2 <- c("mu.lpsi",
+             "sd.lpsi",
+             "mu.beta1",
+             "sd.beta1",
+             "mu.beta2",
+             "sd.beta2",
+             "mu.beta3",
+             "sd.beta3",
+             "mu.beta4",
+             "sd.beta4",
+             "mu.beta5",
+             "sd.beta5",
+             "mu.beta6",
+             "sd.beta6",
+             "mu.beta7",
+             "sd.beta7",
+             "mu.beta8",
+             "sd.beta8",
+             "mu.beta9",
+             "sd.beta9",
+             "lpsi",
+             "beta1",
+             "beta2",
+             "beta3",
+             "beta4",
+             "beta5",
+             "beta6",
+             "beta7",
+             "beta8",
+             "beta9",
+             "lp",
+             "alpha1",
+             "alpha2",
+             "alpha3",
+             "z")
 
 ## Settings for the MCMC
-ni <- 10000
-nt <- 10
-nb <- 1000
+ni <- 20000
+nt <- 20
+nb <- 2000
 nc <- 3
 
 ## to keep
@@ -599,27 +597,38 @@ nc <- 3
 # 
 # rm(list = to_remove)
 
-## Running the model
+## *************************************************************
+##
+## Section Notes: This is run on a different computer
+## Late iteration: Connor's Computer at CLO
+##
+## *************************************************************
+
+## Running the model and getting the summarized mcmc output
 out2 <- jags(data = win.data.rag,
              inits = inits,
              params1,
-             "Code/JAGS_Models/Sierra_MSOM_Covs_NA_95_BM.txt",
+             "JAGS_Models/Sierra_MSOM_Covs_NA_VarThresh_975min.txt",
              n.chains = nc,
              n.thin = nt,
              n.iter = ni,
              n.burnin = nb,
              parallel = TRUE)
 
-# out3 <- jags.basic(win.data.new, 
-#                    inits, 
-#                    params2, 
-#                    "Sierra_MSOM_Covs_NA.txt", 
-#                    n.chains = nc,
-#                    n.thin = nt, 
-#                    n.iter = ni, 
-#                    n.burnin = nb, 
-#                    parallel = TRUE)
+save(out2, file = "JAGS_Output/MSOM_Ragged_JAGS_Summaries_VarThresh_975min.Rdata")
 
+## Running with the MCMC chains in an unprocessed format for getting the Zs out
+out3 <- jags.basic(win.data.rag,
+                   inits,
+                   params2,
+                   "JAGS_Models/Sierra_MSOM_Covs_NA_VarThresh_975min.txt",
+                   n.chains = nc,
+                   n.thin = nt,
+                   n.iter = ni,
+                   n.burnin = nb,
+                   parallel = TRUE)
+
+save(out3, file = "JAGS_Output/MSOM_Ragged_JAGS_Zout_VarThresh_975min.Rdata")
 
 ## -------------------------------------------------------------
 ##
