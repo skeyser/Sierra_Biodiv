@@ -407,7 +407,7 @@ output_2021_MaxPrec.r <- output_2021_long  |>
   ) |> 
   # Filter for recall >= 0.5
   filter(recall_value > 0) |> 
-  filter(threshold %in% c("95", "975", "99")) |> 
+  filter(threshold %in% c("975", "99")) |> 
   # For each species, keep only the threshold with highest precision
   group_by(species) |> 
   filter(precision_value == max(precision_value)) |>
@@ -427,7 +427,7 @@ output_2021_MaxPrec <- output_2021_long  |>
   ) |> 
   # Filter for recall >= 0.5
   filter(recall_value > 0)  |>
-  filter(threshold %in% c("95", "975", "99")) |> 
+  filter(threshold %in% c("975", "99")) |> 
   # For each species, keep only the threshold with highest precision
   group_by(species) |> 
   filter(precision_value == max(precision_value)) |>  
@@ -466,7 +466,7 @@ hist(output_2021$cutoff90.r[-74], xlab="Logit Score", #xlim=c(0,1),
 
 write.csv(output_2021, here('./Data/Thresholds_2021_20230309_AllMetrics.csv'),row.names = F)
 write.csv(output_2021_MaxPrec, here('./Data/Thresholds_2021_20230309_BestPrecRec.csv'),row.names = F)
-write.csv(output_2021_best_thresh, here('./Data/Thresholds_2021_20230309_BestThreshold_95min.csv'),row.names = F)
+write.csv(output_2021_best_thresh, here('./Data/Thresholds_2021_20230309_BestThreshold_975min.csv'),row.names = F)
 output_2021[output_2021$species=="Olive-sided Flycatcher",]
 
 output_2021_Sequential.r <- output_2021_long  |> 
@@ -481,10 +481,10 @@ output_2021_Sequential.r <- output_2021_long  |>
   group_by(species) |> 
   mutate(
     selected_threshold = case_when(
-      any(threshold == "99" & recall_value >= 0.1) ~ "99",
-      any(threshold == "975" & recall_value >= 0.1) ~ "975",
-      any(threshold == "95" & recall_value >= 0.1) ~ "95",
-      any(threshold == "90" & recall_value >= 0.1) ~ "90",
+      any(threshold == "99" & recall_value >= 0) ~ "99",
+      any(threshold == "975" & recall_value >= 0) ~ "975",
+      any(threshold == "95" & recall_value >= 0) ~ "95",
+      any(threshold == "90" & recall_value >= 0) ~ "90",
       TRUE ~ NA# default if none of the above meet criteria
     )
   ) |> 
