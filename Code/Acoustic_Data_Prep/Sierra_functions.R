@@ -59,7 +59,7 @@ library(here)
 ac_det_filter <- function(d,
                           d_thresh,
                           thresh_scale = "Conf",
-                          species_thresh_cut = NULL,
+                          species_thresh_cut = NA,
                           thresh_transform = FALSE,
                           thresh_trans_dir = "conf2logit",
                           thresh_cut = "99",
@@ -105,7 +105,7 @@ ac_det_filter <- function(d,
   #                                 Thresh_Tran_Direction = thresh_trans_dir)
   # }
   
-  if(!is.null(species_thresh_cut)){
+  if(!is.na(species_thresh_cut)){
     if(any(str_detect(colnames(sp.thresh), species_thresh_cut))){
       best_thresh <- sp.thresh[, str_detect(colnames(sp.thresh), species_thresh_cut)]
       
@@ -272,18 +272,18 @@ ac_det_filter <- function(d,
   
   ## Add in the transformation
   if(thresh_transform){
-    conf2logit <- function(x) { x / (1-x) }
+    conf2logit <- function(x) { log(x / (1-x)) }
     logit2conf <- function(x) { 1/(1 + exp(-x)) }
     if(thresh_trans_dir == "conf2logit"){
-      d <- d |> 
-        mutate(across(.cols = all_of(date.cols), as.numeric)) |> 
+      d <- d |>
+        mutate(across(.cols = all_of(date.cols), as.numeric)) |>
         mutate(across(.cols = all_of(date.cols), conf2logit))
       
       tmp.thresh <- tmp.thresh |> select(!contains("_conf")) |> pull()
       
     } else if(thresh_trans_dir == "logit2conf"){
-      d <- d |> 
-        mutate(across(.cols = all_of(date.cols), as.numeric)) |> 
+      d <- d |>
+        mutate(across(.cols = all_of(date.cols), as.numeric)) |>
         mutate(across(.cols = all_of(date.cols), logit2conf))
       
       tmp.thresh <- tmp.thresh |> select(contains("_conf")) |> pull()
@@ -452,7 +452,7 @@ aru_det_file_gen <- function(det_dir = c("C:/Users/srk252/Documents/Rprojs/Sierr
                              thresh_transform = FALSE,
                              thresh_trans_dir = "conf2logit",
                              thresh_cut = "99",
-                             species_thresh_cut = NULL,
+                             species_thresh_cut = NA,
                              time_format = "ymd",
                              no_dets = 2,
                              binary = T,
