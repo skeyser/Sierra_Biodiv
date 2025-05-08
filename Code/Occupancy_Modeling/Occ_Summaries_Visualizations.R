@@ -30,6 +30,7 @@ library(stringr)
 library(ggplot2)
 library(here)
 library(MCMCvis)
+library(jagsUI)
 
 ## -------------------------------------------------------------
 
@@ -49,6 +50,9 @@ logit2prob <- function(logit){
 load("R:/Users/skeyser/Postdoc/MSOM_Ragged_JAGS_Summaries_95thresh.Rdata")
 load("R:/Users/skeyser/Postdoc/MSOM_Ragged_JAGS_Zout_95thresh.Rdata")
 
+load(here("./Data/JAGS_Output/MSOM_Ragged_JAGS_Summaries_VarThresh_975min.Rdata"))
+load(here("./Data/JAGS_Output/MSOM_Ragged_JAGS_Zout_VarThresh_975min.Rdata"))
+
 ## -------------------------------------------------------------
 ##
 ## Begin Section: Posterior Predictive Checks
@@ -57,7 +61,7 @@ load("R:/Users/skeyser/Postdoc/MSOM_Ragged_JAGS_Zout_95thresh.Rdata")
 out2
 summary(out2)
 pp.check(out2, observed = 'fitY', simulated = 'fitY.new')
-pp.check(out2, observed = 'fitZ', simulated = 'fitZ.new')
+#pp.check(out2, observed = 'fitZ', simulated = 'fitZ.new')
 
 ## -------------------------------------------------------------
 ##
@@ -79,25 +83,27 @@ out2$parameters
 
 ## Community-wide effects
 ## Occupancy model
-MCMCvis::MCMCplot(out2,
+com_eff <- MCMCvis::MCMCplot(out2,
          params = c(paste0("mu.beta", seq(1,9))),
-         ci = c(50,90),
+         ci = c(50,95),
          ref_ovl = TRUE,
          labels = c("Latitude", 
                     "Elevation", 
-                    expression("Elevation"^2), 
-                    "Mean CBI: 1 yr post",
-                    "Mean CBI: 2-5 yr post",
+                    expression("Elevation"^2),
+                    "Precipitation",
+                    #"Mean CBI: 1 yr post",
+                    "Mean CBI: 1-5 yr post",
                     "Mean CBI: 6-10 yr post",
                     "Mean CBI: 11-35 yr post",
-                    "Stand Age",
-                    "Canopy Cover"),
+                    #"Stand Age",
+                    "Canopy Cover",
+                    "Canopy Height"),
          rank = T)
 
 ## Detection model
 MCMCvis::MCMCplot(out2,
                   params = c(paste0("mu.alpha", seq(1,3))),
-                  ci = c(50,90),
+                  ci = c(50,95),
                   ref_ovl = TRUE,
                   labels = c("Efforts Hours",
                              "JDate",
@@ -107,7 +113,7 @@ MCMCvis::MCMCplot(out2,
 par(mfrow = c(1,2))
 psi.sample <- plogis(rnorm(10^6, mean = out2$mean$mu.lpsi, sd = out2$mean$sd.lpsi))
 p.sample <- plogis(rnorm(10^6, mean = out2$mean$mu.lp, sd = out2$mean$sd.lp))
-
+quantile(p.sample, probs = c(0.025, 0.975))
 hist(psi.sample, freq = F, breaks = 50, col = "grey", xlab = "Species occupancy
 probability", ylab = "Density", main = "")
 
@@ -115,8 +121,119 @@ hist(p.sample, freq = F, breaks = 50, col = "grey", xlab = "Species detection pr
      ylab = "Density", main = "")
 summary(psi.sample) ; summary(p.sample)
 
+# Density plot
+dens <- density(p.sample)
+plot(dens, main="Community Detection Probability Distribution",
+     xlab="Detection Probability", ylab="Density")
+abline(v=c(0.277, 0.67, 0.93), col=c("red", "blue", "red"), lty=c(2,1,2))
+legend("topright", legend=c("95% CI", "Mean"), 
+       col=c("red", "blue"), lty=c(2,1))
+
+
+## Histograms of species richness
+hist(out2$mean$Nsite, main = "Species Richness", breaks = 20)
+mean(out2$mean$Nsite)
+var(out2$mean$Nsite)
+
+
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##
+## Subsection: Tidybayes Prettier Plots
+##
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+library(tidybayes)
+library(tidyr)
+# First, gather all mean parameters
+mcmc_draws <- spread_draws(out2, 
+                           mu.beta1, 
+                           mu.beta2, 
+                           mu.beta3, 
+                           mu.beta4, 
+                           mu.beta5, 
+                           mu.beta6, 
+                           mu.beta7, 
+                           mu.beta8, 
+                           mu.beta9) |>
+  pivot_longer(cols = contains("mu"),
+               names_to = "Parameter",
+               values_to = "Draws")
+
+# Create more informative parameter labels (optional)
+mcmc_draws <- mcmc_draws |>
+  mutate(Parameter = factor(Parameter, 
+                            levels = unique(Parameter),
+                            labels = str_remove(unique(Parameter), "mu\\."))) |> 
+  mutate(Pred_Pretty = case_when(
+    Parameter == "beta1" ~ "Latitude",
+    Parameter == "beta2" ~ "Elevation",
+    Parameter == "beta3" ~ "Elevation^2",
+    Parameter == "beta4" ~ "Precipitation",
+    Parameter == "beta5" ~ "Mean Fire Sev.: 1-5yr",
+    Parameter == "beta6" ~ "Mean Fire Sev.: 6-10yr",
+    Parameter == "beta7" ~ "Mean Fire Sev.: 11-35yr",
+    Parameter == "beta8" ~ "Canopy Cover",
+    Parameter == "beta9" ~ "Canopy Height Res."
+  )) |> 
+  mutate(Pred_Cat = case_when(str_detect(Pred_Pretty, "Latitude|Elevation") ~ "Geographic",
+                              Pred_Pretty == "Precipitation" ~ "Climate",
+                              str_detect(Pred_Pretty, "Fire") ~ "Fire",
+                              str_detect(Pred_Pretty, "Canopy") ~ "Forest")) |> 
+  mutate(Pred_Pretty = factor(Pred_Pretty,
+                              levels = c(
+                                "Latitude",
+                                "Elevation",
+                                "Elevation^2",
+                                "Precipitation",
+                                "Mean Fire Sev.: 1-5yr",
+                                "Mean Fire Sev.: 6-10yr",
+                                "Mean Fire Sev.: 11-35yr",
+                                "Canopy Cover",
+                                "Canopy Height Res." 
+                              ))) |> 
+  mutate(Pred_Cat = factor(Pred_Cat,
+                           levels = rev(c(
+                             "Geographic",
+                             "Climate",
+                             "Fire",
+                             "Forest"
+                           ))))
+
+# Create the half-eye plot
+# Create the half-eye plot with different colors
+pretty_eff <- ggplot(mcmc_draws, aes(y = Pred_Pretty, x = Draws, 
+                       fill = Pred_Cat)) +
+  stat_halfeye(alpha = 0.7,
+               .width = c(0.95, 0.89, 0.5)) +
+  geom_vline(xintercept = 0, linetype = "dashed", 
+             color = "gray20", alpha = 0.4) +
+  scale_fill_manual(values = c(
+    "Fire" = "#CC3311",           # red
+    "Forest" = "#009988", # green
+    "Climate" = "#0077BB",         # blue
+    "Geographic" = "#BBBBBB"        # purple
+  )) +
+  scale_y_discrete(labels = function(x) {
+    x <- gsub("\\^2", "²", x)  # Replace ^2 with ²
+    return(x)
+  }) +
+  theme_minimal() +
+  labs(x = "Standardized Effect Size",
+       y = "") +
+  theme(axis.text.y = element_text(hjust = 0, family = "sans", size = 12),
+        axis.text.x = element_text(family = "sans", size = 12),
+        axis.title = element_text(family = "sans", size = 12),
+        plot.title = element_text(hjust = 0.5),
+        legend.title = element_blank(),
+        legend.text = element_text(family = "sans", size = 12),
+        legend.position = "bottom")
+
+
+ggsave(plot = pretty_eff, filename = here("./Figures/Preliminary/CommunityEff_HalfEye_SpVarThresh.jpg"),
+       height = 8, width = 8, dpi = 600)
+
+
 ## Species-specific responses
-sp.index <- read.csv(here("Code/Occupancy_Modeling/SpeciesIndex_Filtered.csv"))
+sp.index <- read.csv(here("Code/Occupancy_Modeling/SpeciesIndex_Filtered_VarThresh.csv"))
 sp.index$Index <- as.character(sp.index$Index)
 
 str(out3)
@@ -128,7 +245,7 @@ gc()
 pm <- apply(all3, 2, mean)
 cri <- apply(all3, 2, function(x) quantile(x, prob = c(0.025, 0.975)))
 
-nspec <- 95
+nspec <- nrow(sp.index)
 npar <- 14
 N <- nspec*npar
 sp.resp <- data.frame(Par = names(pm[1:N]),
@@ -229,7 +346,8 @@ sp.resp |>
 labels <- c(
   "Latitude" = "Latitude",
   "Elevation" = "Elevation",
-  "Elevation2" = "Elevation^2"
+  "Elevation2" = "Elevation^2",
+  "Precipitation" = "Precip"
 )
 
 geo.eff.plot <- sp.resp |> 
@@ -237,13 +355,13 @@ geo.eff.plot <- sp.resp |>
   mutate(ParPretty = case_when(Par == "beta1" ~ "Latitude",
                                Par == "beta2" ~ "Elevation",
                                Par == "beta3" ~ "Elevation2",
-                               Par == "beta4" ~ "Mean CBI: 1 yr post",
-                               Par == "beta5" ~ "Mean CBI: 2-5 yr post",
+                               Par == "beta4" ~ "Precipitation",
+                               Par == "beta5" ~ "Mean CBI: 1-5 yr post",
                                Par == "beta6" ~ "Mean CBI: 6-10 yr post",
                                Par == "beta7" ~ "Mean CBI: 11-35 yr post",
-                               Par == "beta8" ~ "Stand Age",
-                               Par == "beta9" ~ "Canopy Cover")) |>
-  filter(ParPretty %in% c("Latitude", "Elevation", "Elevation2")) |> 
+                               Par == "beta8" ~ "Canopy Cover",
+                               Par == "beta9" ~ "Canopy Height Res.")) |>
+  filter(ParPretty %in% c("Latitude", "Elevation", "Elevation2", "Precipitation")) |> 
   ggplot(aes(y = Mean, x = reorder(Species, -Mean))) +
   geom_hline(yintercept = 0, linetype = "dashed", color = "black", size = 1.2) +
   geom_pointrange(aes(ymin = LCI, ymax = UCI,
@@ -262,19 +380,22 @@ geo.eff.plot <- sp.resp |>
   ylab("Parameter Estimate") + 
   facet_wrap(~ParPretty, labeller = as_labeller(labels, default = label_parsed))
 
+ggsave(plot = geo.eff.plot, filename = here("./Figures/Preliminary/MSOM_EffPlot_GeoCovariates_SpVarThresh.jpg"),
+       height = 10, width = 10, dpi = 600)
+
 ## Habitat
 hab.eff.plot <- sp.resp |> 
   filter(str_detect(Par, "beta")) |> 
   mutate(ParPretty = case_when(Par == "beta1" ~ "Latitude",
                                Par == "beta2" ~ "Elevation",
                                Par == "beta3" ~ "Elevation2",
-                               Par == "beta4" ~ "Mean CBI: 1 yr post",
-                               Par == "beta5" ~ "Mean CBI: 2-5 yr post",
+                               Par == "beta4" ~ "Precipitation",
+                               Par == "beta5" ~ "Mean CBI: 1-5 yr post",
                                Par == "beta6" ~ "Mean CBI: 6-10 yr post",
                                Par == "beta7" ~ "Mean CBI: 11-35 yr post",
-                               Par == "beta8" ~ "Stand Age",
-                               Par == "beta9" ~ "Canopy Cover")) |>
-  filter(ParPretty %in% c("Stand Age", "Canopy Cover")) |> 
+                               Par == "beta8" ~ "Canopy Cover",
+                               Par == "beta9" ~ "Canopy Height Res.")) |>
+  filter(ParPretty %in% c("Canopy Cover", "Canopy Height Res.")) |> 
   ggplot(aes(y = Mean, x = reorder(Species, -Mean))) +
   geom_hline(yintercept = 0, linetype = "dashed", color = "black", size = 1.2) +
   geom_pointrange(aes(ymin = LCI, ymax = UCI,
@@ -293,23 +414,25 @@ hab.eff.plot <- sp.resp |>
   ylab("Parameter Estimate") + 
   facet_wrap(~ParPretty, nrow = 1)
 
+ggsave(plot = hab.eff.plot, filename = here("./Figures/Preliminary/MSOM_EffPlot_HabCovariates_SpVarThresh.jpg"),
+       height = 10, width = 10, dpi = 600)
+
 ## Fire
 fire.eff.plot <- sp.resp |> 
   filter(str_detect(Par, "beta")) |> 
   mutate(ParPretty = case_when(Par == "beta1" ~ "Latitude",
                                Par == "beta2" ~ "Elevation",
                                Par == "beta3" ~ "Elevation2",
-                               Par == "beta4" ~ "Mean CBI: 1 yr post",
-                               Par == "beta5" ~ "Mean CBI: 2-5 yr post",
+                               Par == "beta4" ~ "Precipitation",
+                               Par == "beta5" ~ "Mean CBI: 1-5 yr post",
                                Par == "beta6" ~ "Mean CBI: 6-10 yr post",
                                Par == "beta7" ~ "Mean CBI: 11-35 yr post",
-                               Par == "beta8" ~ "Stand Age",
-                               Par == "beta9" ~ "Canopy Cover")) |>
+                               Par == "beta8" ~ "Canopy Cover",
+                               Par == "beta9" ~ "Canopy Height Res.")) |>
   filter(str_detect(ParPretty, "Mean CBI")) |> 
   mutate(ParPretty = factor(ParPretty,
                                levels = c(
-                                 "Mean CBI: 1 yr post",
-                               "Mean CBI: 2-5 yr post",
+                               "Mean CBI: 1-5 yr post",
                                "Mean CBI: 6-10 yr post",
                                "Mean CBI: 11-35 yr post"))) |> 
   ggplot(aes(y = Mean, x = reorder(Species, -Mean))) +
@@ -330,7 +453,7 @@ fire.eff.plot <- sp.resp |>
   ylab("Parameter Estimate") + 
   facet_wrap(~ParPretty, nrow = 1)
 
-ggsave(plot = fire.eff.plot, filename = here("./Figures/Preliminary/MSOM_EffPlot_FireCovariates.jpg"),
+ggsave(plot = fire.eff.plot, filename = here("./Figures/Preliminary/MSOM_EffPlot_FireCovariates_SpVarThresh.jpg"),
        height = 10, width = 10, dpi = 600)
 
 
