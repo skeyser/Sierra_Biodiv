@@ -109,6 +109,8 @@ sp.det.list <- combine_species(species_list = sp.det.list,
                                date_cols = colnames(sp.det.list[[1]])[str_detect(colnames(sp.det.list[[1]]), "Cell_Unit", negate = T)])
 
 names(sp.det.list)
+str(sp.det.list)
+
 ## Cell Unit mapping file
 cu.map <- data.frame(ID = 1:length(sp.det.list[[1]]$Cell_Unit), Cell_Unit = sp.det.list[[1]]$Cell_Unit)
 cu.map <- cu.map |>
@@ -187,7 +189,7 @@ y <- y[,,-drop.sp]
 sp.names <- dimnames(y)
 sp.df <- data.frame(Index = 1:length(sp.names[[3]]),
                     Species = sp.names[[3]])
-#write.csv(sp.df, file = here::here("Code/Occupancy_Modeling/SpeciesIndex_Filtered.csv"))
+#write.csv(sp.df, file = here::here("Code/Occupancy_Modeling/SpeciesIndex_Filtered_VarThresh.csv"))
 
 ## Redefine nspec
 nspec <- dim(y)[3]
@@ -195,7 +197,7 @@ nspec <- dim(y)[3]
 tmp <- apply(y, c(1,3), max, na.rm = TRUE)
 tmp[tmp == "-Inf"] <- NA
 sort(C <- apply(tmp, 1, sum)) # Compute and print sorted species counts
-
+hist(C, breaks = 30, main = "Naive Species Richness")
 ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ##
 ## Subsection: Data checking
@@ -284,6 +286,8 @@ print(y)
 ## Subsection: "Ragged array" data input for skipping NAs
 ##
 ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ragged <- FALSE
+spOcc <- TRUE
 ## *************************************************************
 ##
 ## Section Notes:
@@ -295,7 +299,7 @@ print(y)
 ## for one species and attributed to all remaining species.
 ##
 ## *************************************************************
-
+if(ragged){
 ## One slice of the species matrix
 y_sub <- y[,,1]
 
@@ -384,6 +388,7 @@ for(i in 1:dim(y)[3]){
   y_long[,i] <- y.tmp[!is.na(y.tmp)]
 }
 
+} #if ragged
 ## -------------------------------------------------------------
 ##
 ## Begin Section: Occupancy Covariates
@@ -437,6 +442,33 @@ aru_meta <- aru_meta |> select(Cell_Unit,
          fire1_5yr_high_prop = (fire1yr_high_prop + fire2_5yr_high_prop)/2,
          fire1_5yr_lowmod_prop = (fire1yr_lowmod_prop + fire2_5yr_lowmod_prop)/2)
 
+aru_cor <- cor(aru_meta |> select(topo_elev,
+                                  ppt_bcm_mn,
+                                  fire1_5yr_cbi_mn,
+                                  fire6_10yr_cbi_mn,
+                                  fire11_35yr_cbi_mn,
+                                  ch_cfo_mn,
+                                  cc_cfo_mn,
+                                  Y,
+                                  X))
+
+## CC and CFO are highly correlated
+corrplot::corrplot(aru_cor,
+                   method = "number")
+
+## Create orthogonal predictor by lm
+plot(aru_meta$cc_cfo_mn, aru_meta$ch_cfo_mn)
+ch_res <- lm(ch_cfo_mn ~ cc_cfo_mn, aru_meta)$residual
+
+aru_meta <- aru_meta |> mutate(ch_res = ch_res)
+
+coords <- aru_meta |> 
+  select(Cell_Unit, Y, X, ch_res) |> 
+  sf::st_as_sf(coords = c("X", "Y"), crs = 4326) |> 
+  sf::st_transform(crs = 3310) |> 
+  sf::st_coordinates() |> 
+  as.data.frame()
+
 ## Scale the preds of interest
 {
 ## Spatial data
@@ -475,6 +507,7 @@ cc_f3 <- as.vector(scale(aru_meta$cpycovr_f3_mn))
 cc_cfo <- as.vector(scale(aru_meta$cc_cfo_mn))
 cc_cfo_sd <- as.vector(scale(aru_meta$cc_cfo_sd))
 ch_cfo <- as.vector(scale(aru_meta$ch_cfo_mn))
+ch_res <- as.vector(scale(aru_meta$ch_res))
 ch_cfo_sd <- as.vector(scale(aru_meta$ch_cfo_sd))
 }
 
@@ -483,7 +516,7 @@ ch_cfo_sd <- as.vector(scale(aru_meta$ch_cfo_sd))
 ## Begin Section: Prep Data for JAGS
 ##
 ## -------------------------------------------------------------
-
+if(ragged){
 dimnames(y) <- NULL
 # win.data <- list(y = y, 
 #              nsite = dim(y)[1],
@@ -512,9 +545,9 @@ win.data.rag <- list(y = y_long,
                      site_id = has_data[,1],
                      eff.hrs = eff.hrs.scale,
                      eff.jday = eff.jday.scale,
-                     bmass = bm.scale,
-                     beak.pc1 = pc1,
-                     beak.pc2 = pc2,
+                     #bmass = bm.scale,
+                     #beak.pc1 = pc1,
+                     #beak.pc2 = pc2,
                      utmn = utmn,
                      lat = Lat,
                      ele = ele,
@@ -528,9 +561,11 @@ win.data.rag <- list(y = y_long,
                      stage = stage,
                      cc_f3 = cc_f3,
                      cc_cfo = cc_cfo,
-                     ch_cfo = ch_cfo
+                     ch_cfo = ch_cfo,
+                     ch_res = ch_res
                      )
 str(win.data.rag)
+}
 #                  nrep = dim(y)[2],
 #                  nspec = dim(y)[3],
 #                  eff.days = eff.days,
@@ -547,6 +582,42 @@ str(win.data.rag)
 #                  cc = cc
 # )
 
+if(spOcc){
+  
+  eff.hrs.m <- as.matrix(eff.hrs)
+  eff.hrs.m[eff.hrs.m == 0] <- NA
+  eff.jday.m <- as.matrix(eff.jday)
+  eff.jday.m[is.na(eff.hrs.m)] <- NA
+  
+  y.new <- y
+  dimnames(y.new) <- list(
+    sites = aru_meta$Cell_Unit,
+    reps = paste0("Rep_", seq(1:5)),
+    species = dimnames(y.new)[[3]]
+  )
+  y.new <- aperm(y.new, c(3,1,2))
+  str(y.new)
+  y.new[1:10, 1:10, 1]
+  
+  spOcc.data <- list(
+    y = y.new,
+    det.covs = list(eff.hrs = eff.hrs.m,
+                    eff.jday = eff.jday.m),
+    occ.covs = data.frame(ele = ele,
+                    ppt = ppt,
+                    tmx = tmx,
+                    cbi1 = cbi1,
+                    cbi1_5 = cbi1_5,
+                    cbi2_5 = cbi2_5,
+                    cbi6_10 = cbi6_10,
+                    cbi11_35 = cbi11_35,
+                    stage = stage,
+                    cc_f3 = cc_f3,
+                    cc_cfo = cc_cfo,
+                    ch_cfo = ch_cfo,
+                    ch_res = ch_res),
+    coords = coords)
+}
 
 ## -------------------------------------------------------------
 ##
@@ -559,7 +630,7 @@ str(win.data.rag)
 ## Begin Section: Cleaning file and saving .RDATA
 ##
 ## -------------------------------------------------------------
-
+if(ragged){
 to_keep <- c("y", "y_long", "win.data.rag")
 to_remove <- setdiff(ls(), to_keep)
 
@@ -568,3 +639,8 @@ rm(to_remove)
 
 ## Save the RDATA
 save.image(file = here("./Data/JAGS_Data/MSOM_Ragged_2021_SpeciesThresh_975minMaxPrex_NewVars.RData"))
+}
+
+if(spOcc){
+  saveRDS(spOcc.data, here("./Data/SpOccupancy_Data/SpOccData_SpeciesThresh_975minMaxPrex_NewVars.rds"))
+}
