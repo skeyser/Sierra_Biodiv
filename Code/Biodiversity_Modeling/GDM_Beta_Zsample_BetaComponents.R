@@ -31,6 +31,7 @@ library(ggplot2)
 library(here)
 library(purrr)
 library(tidyr)
+library(sf)
 
 ## GDM
 library(gdm)
@@ -39,7 +40,8 @@ library(adespatial)
 ## -------------------------------------------------------------
 
 ## Load in the Z-matrices
-load(here("./Data/JAGS_Data/Occ2GDM_Data_95thresh.Rdata"))
+#load(here("./Data/JAGS_Data/Occ2GDM_Data_95thresh.Rdata"))
+load(here("./Data/JAGS_Data/Occ2GDM_Data_SpThresh_975minMaxPrec.Rdata"))
 
 ## Reformat data
 Z <- OccData$Z.posterior
@@ -58,15 +60,28 @@ aru_meta <- aru_meta |>
 hist(aru_meta$Long)
 hist(aru_meta$Lat)
 
+## Vars we want
+v.keep <- c("Cell_Unit", "Lat", "Long", 
+            "ele", "ppt", 
+            "fire1_5yr_cbi_mn", "fire6_10yr_cbi_mn", "fire11_35yr_cbi_mn",
+            "cancov", "ch_res")
+
+aru_meta <- aru_meta |> 
+  select(all_of(v.keep))
+
+
 ## -------------------------------------------------------------
 ##
 ## Begin Section: Format for GDM
 ##
 ## -------------------------------------------------------------
 
+## Posterior samples
+n.samples <- OccData$Z.draws
+
 ## Species data
-mr <- vector(mode = "list", length = 100)
-for(i in 1:dim(Z)[3]){
+mr <- vector(mode = "list", length = n.samples)
+for(i in 1:n.samples){
   Z.tmp <- Z[,,i]
   missRows <- which(rowSums(Z.tmp) == 0)
   mr[[i]] <- missRows
@@ -82,6 +97,8 @@ envTab <- aru_meta |>
 envTab <- envTab[-missRows, ]
 
 ## Format the data for GDM
+samp <- sort(ceiling(runif(100, 0, 1000)))
+Z <- Z[,,samp]
 npost <- dim(Z)[3]
 
 ## Make the list to hold model fits
@@ -89,6 +106,10 @@ gdm.fit.list <- tibble(
   beta_metric = c("Brep", "Brich", "Btotal"),
   models = vector("list", 3)) |>
   mutate(models = map(1:n(), ~vector("list", npost)))
+
+## Remove the OccData object prior to loop
+rm(OccData)
+gc()
 
 ## Progress bar
 pb <- txtProgressBar(min = 0, max = npost, style = 3)
@@ -163,8 +184,20 @@ close(pb)
 gc()
 
 ## Write the model list to file
-#saveRDS(gdm.fit.list, file = here("./Data/GDM_Out/GDMPosteriorFitsBetaComps.RDS"))
-gdm.fit.list <- readRDS(file = here("./Data/GDM_Out/GDMPosteriorFitsBetaComps.RDS"))
+#saveRDS(gdm.fit.list, file = here("./Data/GDM_Out/GDMPosteriorFitsBetaComps_SpVarThresh_975minMaxPrec.RDS"))
+gdm.fit.list <- readRDS(file = here("./Data/GDM_Out/GDMPosteriorFitsBetaComps_SpVarThresh_975minMaxPrec.RDS"))
+
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##
+## Subsection: Variable Importance
+##
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+VI <- gdm.varImp(gdm.fit.list$models[[3]][[1]],
+           predSelect = T,
+           nPerm = 50,
+           parallel = TRUE,
+           cores = 8)
 
 ## Summary stats on the fits
 summary_stats <- gdm.fit.list %>%
@@ -232,23 +265,39 @@ coef_summary <- gdm.fit.list %>%
     spline3_low = quantile(spline3, probs = 0.025),
     .groups = "drop"
   ) |> mutate(PredPretty = case_when(Pred == "ele" ~ "Elevation",
-                            Pred == "stage" ~ "Stand Age",
+                            #Pred == "stage" ~ "Stand Age",
                             Pred == "cancov" ~ "Canopy Cover",
+                            Pred == "ch_res" ~ "Canopy Height Res.",
                             Pred == "Geographic" ~ "Geog. Dist.",
-                            Pred == "fire1_5yr_high_prop" ~ "High Sev. Fire: 1-5yr",
-                            Pred == "fire6_10yr_high_prop" ~ "High Sev. Fire: 6-10yr",
-                            Pred == "fire11_35yr_high_prop" ~ "High Sev. Fire: 11-35yr",
-                            Pred == "fire1_5yr_lowmod_prop" ~ "Low/Mod Sev. Fire: 1-5yr",
-                            Pred == "fire6_10yr_lowmod_prop" ~ "Low/Mod Sev. Fire: 6-10yr",
-                            Pred == "fire11_35yr_lowmod_prop" ~ "Low/Mod Sev. Fire: 11-35yr")) |> 
-  mutate(Color = case_when(PredPretty %in% c("Elevation", "Geog. Dist.") ~ "#7570b3",
-                           PredPretty %in% c("Canopy Cover", "Stand Age") ~ "#1b9e77",
-                           PredPretty %in% c("High Sev. Fire: 1-5yr",
-                                       "High Sev. Fire: 6-10yr",
-                                       "High Sev. Fire: 11-35yr",
-                                       "Low/Mod Sev. Fire: 1-5yr",
-                                       "Low/Mod Sev. Fire: 6-10yr",
-                                       "Low/Mod Sev. Fire: 11-35yr") ~ "#d95f02"))
+                            #Pred == "fire1_5yr_high_prop" ~ "High Sev. Fire: 1-5yr",
+                            #Pred == "fire6_10yr_high_prop" ~ "High Sev. Fire: 6-10yr",
+                            #Pred == "fire11_35yr_high_prop" ~ "High Sev. Fire: 11-35yr",
+                            #Pred == "fire1_5yr_lowmod_prop" ~ "Low/Mod Sev. Fire: 1-5yr",
+                            #Pred == "fire6_10yr_lowmod_prop" ~ "Low/Mod Sev. Fire: 6-10yr",
+                            #Pred == "fire11_35yr_lowmod_prop" ~ "Low/Mod Sev. Fire: 11-35yr"),
+                            Pred == "ppt" ~ "Precipitation",
+                            Pred == "fire1_5yr_cbi_mn" ~ "Mean Fire Severity: 1-5yr",
+                            Pred == "fire6_10yr_cbi_mn" ~ "Mean Fire Severity: 6-10yr",
+                            Pred == "fire11_35yr_cbi_mn" ~ "Mean Fire Severity: 11-35yr"
+                            )) |> 
+  mutate(Color = case_when(PredPretty %in% c("Elevation", 
+                                             "Geog. Dist.",
+                                             "Precipitation") ~ "#7570b3",
+                           PredPretty %in% c("Canopy Cover", 
+                                             #"Stand Age"
+                                             "Canopy Height Res."
+                                             ) ~ "#1b9e77",
+                           PredPretty %in% c(
+                             "Mean Fire Severity: 1-5yr",
+                             "Mean Fire Severity: 6-10yr",
+                             "Mean Fire Severity: 11-35yr"
+                                       # "High Sev. Fire: 1-5yr",
+                                       # "High Sev. Fire: 6-10yr",
+                                       # "High Sev. Fire: 11-35yr",
+                                       # "Low/Mod Sev. Fire: 1-5yr",
+                                       # "Low/Mod Sev. Fire: 6-10yr",
+                                       # "Low/Mod Sev. Fire: 11-35yr"
+                                       ) ~ "#d95f02"))
 
 
 ## Total spline influence
@@ -285,8 +334,8 @@ coeff_lolli <- ggplot(coef_totals, aes(x = reorder(PredPretty, total_mean), y = 
   scale_color_manual(values = setNames(coef_totals$Color, coef_totals$PredPretty)) +
   coord_flip() +
   facet_wrap(~beta_metric, labeller = labeller(beta_metric = new_labels)) +
-  scale_y_continuous(breaks = seq(0.05, 0.35, by = .1),  # Adjust these numbers as needed
-                     limits = c(0, 0.4)) +  # Adjust limits as needed
+  scale_y_continuous(breaks = seq(0, 1, by = .2),  # Adjust these numbers as needed
+                     limits = c(0, 1)) +  # Adjust limits as needed
   theme_bw() +
   labs(x = "",
        y = "Effect Size") +
@@ -297,6 +346,41 @@ coeff_lolli <- ggplot(coef_totals, aes(x = reorder(PredPretty, total_mean), y = 
         panel.spacing = unit(0.75, "lines")) 
 
 coeff_lolli
+
+coeff_lolli2 <- ggplot(coef_totals, aes(x = reorder(PredPretty, total_mean), 
+                                                       y = total_mean)) +
+  # Draw segments
+  geom_segment(aes(x = reorder(PredPretty, total_mean),
+                   xend = reorder(PredPretty, total_mean),
+                   y = 0, 
+                   yend = total_mean),
+               color = "gray50",
+               size = 1) +
+  # Draw white background for points to "break" the line
+  geom_point(size = 5, 
+             color = "white",
+             fill = "white") +
+  # Draw actual points
+  geom_point(aes(color = Color,
+                 shape = beta_metric),
+             size = 4) +
+  scale_color_identity() +
+  scale_shape_manual(values = c("Total Beta" = 16,  # Filled circle
+                                "Turnover" = 18,      # Open circle
+                                "Nestedness" = 17),   # Open triangle
+                     name = "Metric") +
+  coord_flip() +
+  scale_y_continuous(breaks = seq(0, 1, by = .2),
+                     limits = c(0, 1)) +
+  theme_bw() +
+  labs(x = "",
+       y = "Effect Size") +
+  theme(axis.text = element_text(size = 12),
+        axis.title = element_text(size = 14),
+        legend.position = "right",
+        panel.spacing = unit(0.75, "lines"))
+
+coeff_lolli2
 
 # ggsave(plot = coeff_lolli, filename = here("./Figures/Preliminary/BComponentsLolli.jpg"),
 #        height = 8, width = 12, dpi = 600)
@@ -366,20 +450,52 @@ make_spline_df <- function(model_list, var_name){
   unnest(spline_data)
   
   ## Find the covariate name
-  cov_rename <- data.frame(Pred = c("ele", "stage", "cancov", "Geographic", 
-                                    "fire1_5yr_high_prop", "fire6_10yr_high_prop", "fire11_35yr_high_prop", 
-                                    "fire1_5yr_lowmod_prop", "fire6_10yr_lowmod_prop", "fire11_35yr_lowmod_prop"), 
-                           PredPretty = c("Elevation","Stand Age","Canopy Cover","Geog. Dist.",
-                                          "High Sev. Fire: 1-5yr","High Sev. Fire: 6-10yr","High Sev. Fire: 11-35yr",
-                                          "Low/Mod Sev. Fire: 1-5yr","Low/Mod Sev. Fire: 6-10yr","Low/Mod Sev. Fire: 11-35yr")) |> 
-    mutate(Color = case_when(PredPretty %in% c("Elevation", "Geog. Dist.") ~ "#7570b3",
-                             PredPretty %in% c("Canopy Cover", "Stand Age") ~ "#1b9e77",
-                             PredPretty %in% c("High Sev. Fire: 1-5yr",
-                                               "High Sev. Fire: 6-10yr",
-                                               "High Sev. Fire: 11-35yr",
-                                               "Low/Mod Sev. Fire: 1-5yr",
-                                               "Low/Mod Sev. Fire: 6-10yr",
-                                               "Low/Mod Sev. Fire: 11-35yr") ~ "#d95f02"))
+  cov_rename <- data.frame(Pred = c("ele", 
+                                    "cancov", 
+                                    "Geographic", 
+                                    "ch_res", 
+                                    "ppt", 
+                                    #"stage", 
+                                    #"fire1_5yr_high_prop", "fire6_10yr_high_prop", "fire11_35yr_high_prop", 
+                                    #"fire1_5yr_lowmod_prop", "fire6_10yr_lowmod_prop", "fire11_35yr_lowmod_prop"
+                                    "fire1_5yr_cbi_mn",
+                                    "fire6_10yr_cbi_mn",
+                                    "fire11_35yr_cbi_mn"
+                                    ), 
+                           PredPretty = c("Elevation", 
+                                          "Canopy Cover",
+                                          "Geog. Dist.", 
+                                          "Canopy Height Res.",
+                                          "Precipitation",
+                                          # "Stand Age",
+                                          # "High Sev. Fire: 1-5yr",
+                                          # "High Sev. Fire: 6-10yr",
+                                          # "High Sev. Fire: 11-35yr",
+                                          # "Low/Mod Sev. Fire: 1-5yr",
+                                          # "Low/Mod Sev. Fire: 6-10yr",
+                                          # "Low/Mod Sev. Fire: 11-35yr"
+                                          "Mean Fire Severity: 1-5yr",
+                                          "Mean Fire Severity: 6-10yr",
+                                          "Mean Fire Severity: 11-35yr"
+                                          )) |> 
+    mutate(Color = case_when(PredPretty %in% c("Elevation", 
+                                               "Geog. Dist.",
+                                               "Precipitation"
+                                               ) ~ "#7570b3",
+                             PredPretty %in% c("Canopy Cover", 
+                                               #"Stand Age"
+                                               "Canopy Height Res."
+                                               ) ~ "#1b9e77",
+                             PredPretty %in% c("Mean Fire Severity: 1-5yr",
+                                               "Mean Fire Severity: 6-10yr",
+                                               "Mean Fire Severity: 11-35yr"
+                                               # "High Sev. Fire: 1-5yr",
+                                               # "High Sev. Fire: 6-10yr",
+                                               # "High Sev. Fire: 11-35yr",
+                                               # "Low/Mod Sev. Fire: 1-5yr",
+                                               # "Low/Mod Sev. Fire: 6-10yr",
+                                               # "Low/Mod Sev. Fire: 11-35yr"
+                                               ) ~ "#d95f02"))
   
   ## Return a list with the necessary info to automate plotting
   spline_df <- list(spline_df = spline_df,
@@ -447,7 +563,7 @@ spline_plot <- function(spline_list){
     theme_bw() +
     theme(axis.title = element_text(family = "sans", size = 16),
           axis.text = element_text(family = "sans", size = 14)) +
-    scale_y_continuous(limits = c(0, 0.4)) +
+    scale_y_continuous(limits = c(0, 1)) +
     xlab(spline_list$plot_name) +
     ylab("Ecological Distance") +
     labs(linetype = NULL) +
@@ -462,27 +578,33 @@ return(splot)
 ## Plot each of the variable for patchworking later
 ## Make the DFs
 ele_df <- make_spline_df(model_list = gdm.fit.list, var = "ele")
+ppt_df <- make_spline_df(model_list = gdm.fit.list, var = "ppt")
 cancov_df <- make_spline_df(model_list = gdm.fit.list, var = "cancov")
-stage_df <- make_spline_df(model_list = gdm.fit.list, var = "stage")
+canht_df <- make_spline_df(model_list = gdm.fit.list, var = "ch_res")
 geo_df <- make_spline_df(model_list = gdm.fit.list, var = "Geographic")
-f5h_df <- make_spline_df(model_list = gdm.fit.list, var = "fire1_5yr_high_prop")
-f10h_df <- make_spline_df(model_list = gdm.fit.list, var = "fire6_10yr_high_prop")
-f35h_df <- make_spline_df(model_list = gdm.fit.list, var = "fire11_35yr_high_prop")
-f5lm_df <- make_spline_df(model_list = gdm.fit.list, var = "fire1_5yr_lowmod_prop")
-f10lm_df <- make_spline_df(model_list = gdm.fit.list, var = "fire6_10yr_lowmod_prop")
-f35lm_df <- make_spline_df(model_list = gdm.fit.list, var = "fire11_35yr_lowmod_prop")
+f5h_df <- make_spline_df(model_list = gdm.fit.list, var = "fire1_5yr_cbi_mn")
+f10h_df <- make_spline_df(model_list = gdm.fit.list, var = "fire6_10yr_cbi_mn")
+f35h_df <- make_spline_df(model_list = gdm.fit.list, var = "fire11_35yr_cbi_mn")
+# f5h_df <- make_spline_df(model_list = gdm.fit.list, var = "fire1_5yr_high_prop")
+# f10h_df <- make_spline_df(model_list = gdm.fit.list, var = "fire6_10yr_high_prop")
+# f35h_df <- make_spline_df(model_list = gdm.fit.list, var = "fire11_35yr_high_prop")
+# f5lm_df <- make_spline_df(model_list = gdm.fit.list, var = "fire1_5yr_lowmod_prop")
+# f10lm_df <- make_spline_df(model_list = gdm.fit.list, var = "fire6_10yr_lowmod_prop")
+# f35lm_df <- make_spline_df(model_list = gdm.fit.list, var = "fire11_35yr_lowmod_prop")
 
 ## Feed into the plotting function
 p.ele <- spline_plot(ele_df)
+p.ppt <- spline_plot(ppt_df)
 p.cc <- spline_plot(cancov_df)
-p.sage <- spline_plot(stage_df)
+p.ch <- spline_plot(canht_df)
+#p.sage <- spline_plot(stage_df)
 p.geo <- spline_plot(geo_df)
 p.f5h <- spline_plot(f5h_df)
 p.f10h <- spline_plot(f10h_df)
 p.f35h <- spline_plot(f35h_df)
-p.f5lm <- spline_plot(f5lm_df)
-p.f10lm <- spline_plot(f10lm_df)
-p.f35lm <- spline_plot(f35lm_df)
+# p.f5lm <- spline_plot(f5lm_df)
+# p.f10lm <- spline_plot(f10lm_df)
+# p.f35lm <- spline_plot(f35lm_df)
 
 
 library(patchwork)
@@ -491,11 +613,24 @@ pgrid_lyt <- "
 AAB
 CDE
 FHI
-JKL
+J##
 "
-pgrid <- free(coeff_lolli) + p.geo + p.ele + p.sage + p.cc + p.f5h + p.f10h + p.f35h + p.f5lm + p.f10lm + p.f35lm + plot_layout(design = pgrid_lyt, guides = "collect")
+pgrid <- free(coeff_lolli2) + 
+  p.geo + 
+  p.ele +
+  p.ppt +
+  #p.sage + 
+  p.cc +
+  p.ch +
+  p.f5h + 
+  p.f10h + 
+  p.f35h + 
+  #p.f5lm + 
+  #p.f10lm + 
+  #p.f35lm + 
+  plot_layout(design = pgrid_lyt, guides = "collect")
 
-ggsave(filename = here("./Figures/Preliminary/GridLolli_GDM_AllSamples_BetaComponents.jpg"),
+ggsave(filename = here("./Figures/Preliminary/GridLolli_GDM_AllSamples_BetaComponents_SpVarThresh.jpg"),
        plot = pgrid, height = 13, width = 13,
        dpi = 600)
 
