@@ -97,6 +97,8 @@ envTab <- aru_meta |>
 envTab <- envTab[-missRows, ]
 
 ## Format the data for GDM
+## !! This section is for testing !! ##
+## !! Need >=1000 runs for full on different comp !! ##
 samp <- sort(ceiling(runif(100, 0, 1000)))
 Z <- Z[,,samp]
 npost <- dim(Z)[3]
@@ -106,6 +108,56 @@ gdm.fit.list <- tibble(
   beta_metric = c("Brep", "Brich", "Btotal"),
   models = vector("list", 3)) |>
   mutate(models = map(1:n(), ~vector("list", npost)))
+
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##
+## Subsection: Pairwise Correlations from Mokany et al., 2022
+##
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# Set up site-pair table, environmental tabular data 
+Z.samp <- as.data.frame(Z[,,1])
+rownames(Z.samp) <- envTab$Cell_Unit
+envTab$Cell_Unit <- 1:length(unique(envTab$Cell_Unit))
+
+## Partition the beta diversity based on Jaccard-based Podani metrics
+bpart <- adespatial::beta.div.comp(Z.samp, coef = "J")
+
+## Total Beta
+btotal <- as.matrix(bpart$D)
+dimnames(btotal) <- list(envTab$Cell_Unit, envTab$Cell_Unit)
+btotal <- cbind(Cell_Unit = envTab$Cell_Unit, btotal)
+
+## Format the data for pairs - bioFormat = 3 accepts preformed D-mat
+gdmTab.samp <- formatsitepair(bioData = btotal,
+                              bioFormat = 3,
+                              XColumn = "Long",
+                              YColumn = "Lat",
+                              siteColumn = "Cell_Unit",
+                              predData = envTab)
+
+# Calculate correlation coefficient for predictor variables  
+env.preds <- c("ele","ppt","cancov","ch_res","fire1_5yr_cbi_mn","fire6_10yr_cbi_mn","fire11_35yr_cbi_mn") 
+env.cor <- cor(envTab[,which(colnames(envTab) %in% env.preds)], method = "pearson")  
+# Calculate correlation coefficients for site-pairs  
+env.pair.dif <- matrix(0, ncol = length(env.preds), nrow = nrow(gdmTab.samp)) 
+colnames(env.pair.dif) <- paste0(env.preds,"_diff") 
+for(i in 1:length(env.preds)) {  
+  env.pair.dif[,i] <- abs(gdmTab.samp[,which(colnames(gdmTab.samp) == paste0("s1.",env.preds[i]))] - 
+                          gdmTab.samp[,which(colnames(gdmTab.samp) == paste0("s2.",env.preds[i]))]) 
+  } # end for i  
+env.dif.cor <- cor(env.pair.dif, method = "pearson")  
+# compare the correlation coefficients for the predictors vs the differnece between the predictors  
+plot(abs(env.cor),
+     abs(env.dif.cor), 
+     xlab="Predictor correlation", 
+     ylab="Predictor-pair correlation")
+lines(c(0,1),c(0,1),lty=3)
+
+## -------------------------------------------------------------
+##
+## End Section: Pairwise correlation checks
+##
+## -------------------------------------------------------------
 
 ## Remove the OccData object prior to loop
 rm(OccData)
@@ -173,6 +225,7 @@ for(i in 1:npost){
   gdm.fit.list[gdm.fit.list$beta_metric == "Brich",]$models[[1]][[i]] <- gdm.fit.brich
   gdm.fit.list[gdm.fit.list$beta_metric == "Btotal",]$models[[1]][[i]] <- gdm.fit.btotal
   
+  
   ## Update progress
   setTxtProgressBar(pb, i)
   
@@ -187,17 +240,32 @@ gc()
 #saveRDS(gdm.fit.list, file = here("./Data/GDM_Out/GDMPosteriorFitsBetaComps_SpVarThresh_975minMaxPrec.RDS"))
 gdm.fit.list <- readRDS(file = here("./Data/GDM_Out/GDMPosteriorFitsBetaComps_SpVarThresh_975minMaxPrec.RDS"))
 
+AICFxn <- function(model){ 
+  mod <- glm((1-model$observed)~model$ecological, family=binomial(link=log))  
+  k <- length(which(model$coefficients>0))+1 
+  # Number of coefficients, plus 1 for the model intercept 
+  AIC <- (2*k)-(2*logLik(mod)) 
+  dev <- ((mod$null.deviance-mod$deviance)/mod$null.deviance)*100  
+  return(list(AIC,dev)) 
+} 
+
+test <- readRDS("R:/Users/skeyser/Postdoc/GDM_Output/Output_GDM_1.RDS")
+
+test <- test$models[[1]]
+
+AICFxn(test)
+
 ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ##
 ## Subsection: Variable Importance
 ##
 ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
+class(gdm.fit.list$models[[3]][[1]])
 VI <- gdm.varImp(gdm.fit.list$models[[3]][[1]],
            predSelect = T,
            nPerm = 50,
            parallel = TRUE,
-           cores = 8)
+           cores = 4)
 
 ## Summary stats on the fits
 summary_stats <- gdm.fit.list %>%
@@ -320,6 +388,11 @@ new_labels <- c(
   'Brich' = 'Nestedness',
   'Btotal' = 'Total Beta'
 )
+
+## Coeff totals difference in effects
+coef_totals |> 
+  group_by(beta_metric) |> 
+  arrange(desc(total_mean))
 
 coeff_lolli <- ggplot(coef_totals, aes(x = reorder(PredPretty, total_mean), y = total_mean, color = PredPretty)) +
   geom_segment(aes(x = reorder(PredPretty, total_mean),
@@ -510,6 +583,11 @@ spline_plot <- function(spline_list){
   
   ## Take the DF for the plot
   spline_df <- spline_list$spline_df
+  
+  ## Convert m to km for geog dist
+  if(spline_list$plot_name == "Geog. Dist.") {
+    spline_df$x <- spline_df$x/1000
+  }
   
   # Calculate mean spline
   mean_spline <- spline_df |> 
