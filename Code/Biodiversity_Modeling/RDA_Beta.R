@@ -35,11 +35,13 @@ library(adespatial)
 library(ade4)
 library(adegraphics)
 library(sf)
+library(spdep)
 library(CAbioacoustics)
 ## -------------------------------------------------------------
 
 ## Read in corrected species composition
-load(here("./Data/JAGS_Data/Occ2GDM_Data_95thresh.Rdata"))
+#load(here("./Data/JAGS_Data/Occ2GDM_Data_95thresh.Rdata"))
+load(here("./Data/JAGS_Data/Occ2GDM_Data_SpThresh_975minMaxPrec.Rdata"))
 
 dat <- OccData
 rm(OccData)
@@ -56,6 +58,7 @@ nrow(zmat)
 ind.miss <- which(rowSums(zmat) == 0)
 zmat <- zmat[-ind.miss,]
 nrow(zmat)
+colnames(zmat) <- dat$ZcolNames
 
 ## Add environmental data
 env <- dat$SiteMeta
@@ -63,8 +66,11 @@ env <- dat$SiteMeta
 ## Env test
 env.test <- env |> 
   slice(-ind.miss) |> 
-  select(Cell_Unit, utmn, utme,
-         ele:fire11_35yr_high_prop) |>
+  select(Cell_Unit, Y, X,
+         ele, ppt, cancov, ch_res,
+         fire1_5yr_cbi_mn,
+         fire6_10yr_cbi_mn,
+         fire11_35yr_cbi_mn) |>
   mutate(across(where(is.numeric), 
                 list(scaled = ~scale(., center = TRUE, scale = TRUE)))) |> 
   as.data.frame()
@@ -97,7 +103,7 @@ env.fire <- env |>
   slice(-ind.miss) |> 
   filter(if_any(contains("fire"), ~. > 0)) |> 
   select(Cell_Unit, utmn, utme,
-         ele:fire11_35yr_high_prop) |>
+         ele:ch_res) |>
   mutate(across(where(is.numeric), 
                 list(scaled = ~scale(., center = TRUE, scale = TRUE)))) |> 
   as.data.frame() 
@@ -108,11 +114,13 @@ fire.rows <- which(env.test$Cell_Unit %in% env.fire$Cell_Unit)
 zmat.fire <- zmat[fire.rows,]
 zmat <- zmat.fire
 
-zmat_com <- adespatial::beta.div.comp(zmat, "J")
+zmat_com <- adespatial::beta.div.comp(zmat, "BS", quant = FALSE)
 zmat_com$part
 zmat_nest <- zmat_com$rich
 zmat_turn <- zmat_com$repl
 zmat_tot <- zmat_com$D
+
+ad4::is.euclidean
 
 ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ##
@@ -120,50 +128,143 @@ zmat_tot <- zmat_com$D
 ##
 ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ## Load the data with the coords and UTM zones
-aru_meta <- read.csv(here("./Data/ARU_Meta_120_FilteredOcc.csv"))
-aru_meta <- aru_meta |> 
-  select(Cell_Unit, Year = survey_yea, utmn, utme, utm_zone) |> 
-  filter(Cell_Unit %in% env.test$Cell_Unit) |> 
-  group_split(utm_zone) |>
-  map_dfr(cb_make_aru_sf) |> 
-  mutate(x = st_coordinates(geometry)[,1],
-         y = st_coordinates(geometry)[,2]) |> 
+aru_meta <- read.csv(here("./Data/ARU_120m_New.csv"))
+aru_meta <- aru_meta |>
+  rename(Cell_Unit = cell_unit) |> 
+  select(Cell_Unit, Year = survey_yea, X, Y) |> 
+  filter(Cell_Unit %in% env.test$Cell_Unit) |>  
   arrange(match(Cell_Unit, env.test$Cell_Unit))
 
-coords <- cbind(aru_meta$x, aru_meta$y)
-hist(coords[,1])
+## Take the xy data
+coords <- cbind(aru_meta$X, aru_meta$Y)
+hist(coords[,1], breaks = 50)
+hist(coords[,2], breaks = 50)
 
-mapview::mapview(aru_meta)
+## Make a neighborhood list w. Gabriel neighborhoods
+nbgab <- graph2nb(gabrielneigh(coords), sym = T)
+gab.p <- s.label(coords, nb = nbgab, pnb.edge.col = "red", main = "Gabriel", plot = T)
+
+## Weight by distance
+distgab <- nbdists(nbgab, coords)
+fdist <- lapply(distgab, function(x) 1 - x/max(dist(coords)))
+
+## Create spatial weighting matrix
+listwgab <- nb2listw(nbgab, glist = fdist)
 
 ## Make the MEMs
-MEMs <- dbmem(coords, MEM.autocor = "non-null", silent = F)
-summary(MEMs)
+mem.sierra <- mem(listwgab)
+mem.sierra
 
-s.label(coords, neig = attr(MEMs, "listw"))
+## Plot MEMs
+barplot(attr(mem.sierra, "values"), 
+        main = "Eigenvalues of the spatial weighting matrix", cex.main = 0.7)
 
-s.value(coords, MEMs[,1:3])
+plot(mem.sierra[,c(1, 5, 10, 20, 30, 40, 50, 60, 70)], SpORcoords = coords, symbol = "circle")
 
-## Association with Moran's I
-test <- moran.randtest(MEMs, nrepet = 999)
-plot(test$obs, attr(MEMs, "values"), xlab = "Moran's I", ylab = "Eigenvalues")
+## Calcualte Moran'sI
+moranI <- moran.randtest(mem.sierra, listwgab, 99)
 
-sign_idx <- which(test$pvalue < 0.05)
-sign_MEMs <- MEMs[, sign_idx]
-sign_MEMs <- as.data.frame(sign_MEMs)
+## Examine the spatial patterns in the predictors
+MC.env <- moran.randtest(env.test[,4:10], listwgab, nrepet = 999)
 
-## Visualize the MEMs in space
-coord.sf <- aru_meta |> 
-  bind_cols(sign_MEMs) |> 
-  tidyr::pivot_longer(cols = starts_with("MEM"),
-                      names_to = "MEM",
-                      values_to = "MEMvals")
-  
+mc.bounds <- moran.bounds(listwgab)
+mc.bounds
 
-coord.sf |> 
-  filter(MEM %in% ) |> 
-  ggplot() + 
-  geom_sf(aes(color = MEMvals)) + 
-  facet_wrap(~MEM)
+env.maps <- s1d.barchart(MC.env$obs, labels = MC.env$names, plot = FALSE, xlim = 1.1 * mc.bounds, paxes.draw = TRUE, pgrid.draw = FALSE)
+addline(env.maps, v = mc.bounds, plot = TRUE, pline.col = 'red', pline.lty = 3)
+
+## Testing for spatial autocorrelation in species data
+pca.bird <- dudi.pca(zmat, scale = FALSE, scannf = F, nf = 2)
+
+moran.randtest(pca.bird$li, listw = listwgab)
+s.value(coords, pca.bird$li, Sp = sierra.hull, symbol = "circle", col = c("white", "palegreen4"), ppoint.cex = 0.6)
+
+ms.bird <- multispati(pca.bird, listw = listwgab, scannf = F)
+summary(ms.bird)
+
+g.ms.maps <- s.value(coords, ms.bird$li, 
+                     symbol = "circle", 
+                     col = c("white", "palegreen4"), 
+                     ppoint.cex = 0.6,
+                     xlim = c(min(coords[,1]), max(coords[,1])),
+                     ylim = c(min(coords[,2]), max(coords[,2])))
+
+
+## Species-specific spatial patterning
+g.ms.spe <- s.arrow(ms.bird$c1, plot = FALSE)
+g.abund <- s.value(coords, zmat[, c(1,50,20,10)],
+                   xlim = c(min(coords[,1]), max(coords[,1])),
+                   ylim = c(min(coords[,2]), max(coords[,2])), 
+                   symbol = "circle", 
+                   col = c("black", "palegreen4"), 
+                   plegend.drawKey = FALSE, 
+                   ppoint.cex = 0.4, 
+                   plot = FALSE)
+p1 <- list(c(0.05, 0.65), c(0.01, 0.25), c(0.74, 0.58), c(0.55, 0.05))
+for (i in 1:4)
+  g.ms.spe <- insert(g.abund[[i]], g.ms.spe, posi = p1[[i]], ratio = 0.25, plot = FALSE)
+g.ms.spe
+
+## Scalogram
+scalo <- scalogram(zmat[,1], mem.sierra, nblocks = 50)
+plot(scalo)
+
+## Choosing the best MEMs for the spatial component of the analysis
+mem.sierra.sel <- mem.select(bird.pca$tab, listw = listwgab)
+dim(mem.sierra.sel$MEM.select)
+## Take some 115 MEMs
+
+rda.sierra <- pcaiv(bird.pca, mem.sierra.sel$MEM.select, scannf = FALSE)
+test.rda <- randtest(rda.sierra)
+test.rda
+plot(test.rda)
+
+s.value(coords, rda.sierra$li, 
+        symbol = "circle", 
+        col = c("white", "palegreen4"), 
+        ppoint.cex = 0.6,
+        xlim = c(min(coords[,1]), max(coords[,1])),
+        ylim = c(min(coords[,2]), max(coords[,2])))
+
+## Variance partitioning
+vp1 <- varpart(bird.pca$tab, env.test.ade[,-1], mem.sierra.sel$MEM.select)
+vp1
+plot(vp1, bg = c(3, 5), Xnames = c("environment", "spatial"))
+
+## Significance of fractions
+# Test fraction [a] - Pure environmental effects
+mem.df <- as.data.frame(mem.sierra.sel$MEM.select)
+env.mem <- cbind(env.test.ade[,-1], mem.df)
+rda.a <- rda(bird.pca$tab, env.mem[,1:7])
+anova(rda.a)
+
+# Test fraction [b] - Pure spatial effects
+rda.b <- rda(bird.pca$tab, env.mem[,8:ncol(env.mem)])
+anova(rda.b)
+
+# Test full model [a+b+c]
+rda.full <- rda(bird.pca$tab ~ ., 
+                data = env.mem)
+anova(rda.full)
+
+# Note: Fraction [c] (shared variation) cannot be tested directly
+
+## Model selection criteria for the variables of interest
+# Stepwise selection
+step.sel <- ordistep(rda(bird.pca$tab ~ 1, data=env.mem),  # null model
+                     scope = formula(rda(bird.pca$tab ~ ., data=env.mem)),  # full model
+                     direction = "both",
+                     permutations = 999)
+
+# View results
+step.sel$anova
+
+## -------------------------------------------------------------
+##
+## End Section: Moran's Eigen Maps
+##
+## -------------------------------------------------------------
+
 
 ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ##
@@ -171,21 +272,18 @@ coord.sf |>
 ##
 ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #env.test <- env.test[-ind.miss,]
-mout1 <- dbrda(zmat_nest ~ utmn_scaled + ele_scaled + stage_scaled + cancov_scaled + fire1_5yr_high_prop_scaled + fire6_10yr_high_prop_scaled 
-               + fire11_35yr_high_prop_scaled + fire1_5yr_lowmod_prop_scaled + fire6_10yr_lowmod_prop_scaled 
-               + fire11_35yr_lowmod_prop_scaled, data = env.test)
+mout1 <- dbrda(zmat_nest ~ Y_scaled + ele_scaled + ppt_scaled + cancov_scaled + ch_res_scaled + fire1_5yr_cbi_mn_scaled + fire6_10yr_cbi_mn_scaled + fire11_35yr_cbi_mn_scaled, 
+               data = env.test)
 summary(mout1)
 screeplot(mout1)
 
-mout2 <- dbrda(zmat_turn ~ utmn_scaled + ele_scaled + stage_scaled + cancov_scaled + fire1_5yr_high_prop_scaled + fire6_10yr_high_prop_scaled 
-               + fire11_35yr_high_prop_scaled + fire1_5yr_lowmod_prop_scaled + fire6_10yr_lowmod_prop_scaled 
-               + fire11_35yr_lowmod_prop_scaled, data = env.test)
+mout2 <- dbrda(zmat_turn ~ Y_scaled + ele_scaled + ppt_scaled + cancov_scaled + ch_res_scaled + fire1_5yr_cbi_mn_scaled + fire6_10yr_cbi_mn_scaled + fire11_35yr_cbi_mn_scaled, 
+               data = env.test)
 summary(mout2)
 screeplot(mout2)
 
-mout3 <- dbrda(zmat_tot ~ utmn_scaled + ele_scaled + stage_scaled + cancov_scaled + fire1_5yr_high_prop_scaled + fire6_10yr_high_prop_scaled 
-               + fire11_35yr_high_prop_scaled + fire1_5yr_lowmod_prop_scaled + fire6_10yr_lowmod_prop_scaled 
-               + fire11_35yr_lowmod_prop_scaled, data = env.test)
+mout3 <- dbrda(zmat_tot ~ ppt_scaled + cancov_scaled + ch_res_scaled + fire1_5yr_cbi_mn_scaled + fire6_10yr_cbi_mn_scaled + fire11_35yr_cbi_mn_scaled + Condition(Y_scaled + ele_scaled), 
+               data = env.test)
 summary(mout3)
 screeplot(mout3)
 
@@ -218,14 +316,18 @@ summary(mout3)
 
 
 
-mout.aov1 <- anova(mout1, by = "terms")
+mout.aov1 <- anova.cca(mout1, by = "terms")
 mout.aov1
-mout.aov2 <- anova(mout2, by = "terms")
-
+mout.aov2 <- anova.cca(mout2, by = "terms")
+mout.aov2
 ## Total beta diversity
 ## By terms
-mout.aov3 <- anova(mout3, by = "terms")
+mout.aov3 <- anova.cca(mout3, by = "terms")
+mout.aov3
+
 ## Overall
+mout.aov1global <- anova(mout1)
+mout.aov2global <- anova(mout2)
 mout.aov3global <- anova(mout3)
 
 mout <- dbrda(zmat ~ ., data = env.test, dist = "raup")
@@ -251,14 +353,12 @@ plot_dbrda_density <- function(dbrda_result) {
   
   rownames(env_scores) <- c("Latitude", 
                             "Elevation", 
-                            "Stand Age",
-                            "Canopy Cover", 
-                            "Fire: Low/Mod 1-5yr",
-                            "Fire: Low/Mod 6-10yr",
-                            "Fire: Low/Mod 11-35yr",
-                            "Fire: High 1-5yr",
-                            "Fire: High 6-10yr",
-                            "Fire: High 11-35yr ")
+                            "Precipitation",
+                            "Canopy Cover",
+                            "Canopy Height",
+                            "Fire Severity 1-5yr",
+                            "Fire Severity 6-10yr",
+                            "Fire Severity 11-35yr")
   
   # Create density plot
   p <- ggplot() +
@@ -304,7 +404,7 @@ dbrdaHex <- plot_dbrda_density(dbrda_result = mout1)
 dbrdaHex <- plot_dbrda_density(dbrda_result = mout2)
 dbrdaHex <- plot_dbrda_density(dbrda_result = mout3)
 
-ggsave(plot = dbrdaHex, filename = here("./Figures/Preliminary/dbRDA_Hex_Biplot_RC.jpg"),
+ggsave(plot = dbrdaHex, filename = here("./Figures/Preliminary/dbRDA_Hex_Biplot_RC_SpVar_Rdiff.jpg"),
        height = 6, width = 6, dpi = 600)
 
 # Check the new model with forward-selected variables
@@ -413,3 +513,21 @@ plot_sensitivity(sensRDA)
 # sens_results <- dbrda_sensitivity(your_dist_matrix, env_data, 
 #                                 sqrt_dist=TRUE, add="lingoes")
 # plot_sensitivity(sens_results)
+
+## -------------------------------------------------------------
+##
+## Begin Section: Ade4 Approach
+##
+## -------------------------------------------------------------
+
+library(ade4)
+
+bird.pca <- dudi.pca(zmat, scannf = F)
+env.test.ade <- env.test |> select(contains("scaled")) |> select(-X_scaled)
+rda.sierra <- pcaiv(bird.pca, env.test.ade, scannf = F, nf = 2)
+plot(rda.sierra)
+summary(rda.sierra)
+randtest(rda.sierra)
+
+## ratio
+sum(rda.sierra$ls[, 1]^2 * rda.sierra$lw) / bird.pca$eig[1]
