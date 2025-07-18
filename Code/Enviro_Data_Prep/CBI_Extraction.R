@@ -57,7 +57,6 @@ library(CAbioacoustics)
 
 source(here("./Code/Enviro_Data_Prep/CBI_Extract_Funs.R"))
 
-
 ## -------------------------------------------------------------
 ##
 ## Begin Section: Extraction function body
@@ -68,13 +67,15 @@ source(here("./Code/Enviro_Data_Prep/CBI_Extract_Funs.R"))
 ## Acceptable fire products
 ## fire_interval, most_recent_fire, fire_frequency, number of fires,
 ## and landscape metrics
+
 aru_fire_prep <- function(fire_prod = NULL, # character vector of desired fire output
                           locs_from_cabio = T, #override flag for using CAbioacoustic locations and metadata
                           custom_locs = NULL, # Data.frame with coordinates for custom locations                          
-                          survey_years = c(2021,
-                                           2022,
-                                           2023,
-                                           2024), # Survey year is only applicable for locs_from_cabio = TRUE
+                          survey_years = c(2021
+                                           #2022,
+                                           #2023,
+                                           #2024
+                                           ), # Survey year is only applicable for locs_from_cabio = TRUE
                           id_col = "deployment_name",
                           year_col = NULL,
                           x_col = "Long", # chr for x coordinate col name
@@ -363,18 +364,183 @@ aru_fire_prep <- function(fire_prod = NULL, # character vector of desired fire o
 
 } ## function closure
 
+
+buffSize <- 120
+
 fire_sev21 <- aru_fire_prep(fire_prod = c("fire_severity"),
-                      locs_from_cabio = TRUE,
-                      survey_years = 2021,
-                      intervals = c("1-5", "6-10", "11-35"),
-                      id_col = "deployment_name",
-                      buff_size = 120,
-                      landscape_metrics = F
-                      )
+                            locs_from_cabio = TRUE,
+                            survey_years = 2021,
+                            intervals = c("1-5", "6-10", "11-35"),
+                            id_col = "deployment_name",
+                            buff_size = buffSize,
+                            landscape_metrics = F
+)
+
 fire_sev21 <- fire_sev21$FireSeverity
+
+
+## Histogram for the fire severity
+nrow(fire_sev21$FireSeverity)
+hist(fire_sev21$FireSeverity$Fire_Sev_mean_2016_2020)
+hist(fire_sev21$FireSeverity$Fire_Sev_mean_2011_2015)
+hist(fire_sev21$FireSeverity$Fire_Sev_mean_1986_2010)
+
+## Bring in the dataframe from the ARU stuff
+aru_meta <- read.csv(here("./Data/ARU_120m_New.csv")) |> 
+  mutate(deployment_name = paste(group_id, visit_id, cell_id, unit_numbe, sep = "_"))
+
+aru_meta <- aru_meta |> 
+  filter(deployment_name %in% fire_sev21$FireSeverity$deployment_name) |> 
+  left_join(fire_sev21$FireSeverity)
 
 write.csv(fire_sev21, file = here("./Data/FireSeverity2021_MeanStDev_AllARUs.csv"))
 
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##
+## Subsection: Checking Sensitivity to multiple buffer sizes
+##
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+## 120 meter buffer size used in our analyses
+buffSize <- 120
+
+fire_sev21_120 <- aru_fire_prep(fire_prod = c("fire_severity"),
+                                 locs_from_cabio = TRUE,
+                                 survey_years = 2021,
+                                 intervals = c("1-5", "6-10", "11-35"),
+                                 id_col = "deployment_name",
+                                 buff_size = buffSize,
+                                 landscape_metrics = F
+)
+fire_sev21_120 <- fire_sev21_120$FireSeverity
+
+
+## 500 meter buffer size on fire severity
+buffSize <- 500
+
+fire_sev21_500 <- aru_fire_prep(fire_prod = c("fire_severity"),
+                            locs_from_cabio = TRUE,
+                            survey_years = 2021,
+                            intervals = c("1-5", "6-10", "11-35"),
+                            id_col = "deployment_name",
+                            buff_size = buffSize,
+                            landscape_metrics = F
+)
+fire_sev21_500 <- fire_sev21_500$FireSeverity
+
+## 1200 meter buffer size on fire severity
+buffSize <- 1200
+
+fire_sev21_1200 <- aru_fire_prep(fire_prod = c("fire_severity"),
+                                 locs_from_cabio = TRUE,
+                                 survey_years = 2021,
+                                 intervals = c("1-5", "6-10", "11-35"),
+                                 id_col = "deployment_name",
+                                 buff_size = buffSize,
+                                 landscape_metrics = F
+)
+fire_sev21_1200 <- fire_sev21_1200$FireSeverity
+
+
+## Check correlation between the three sizes
+cor(fire_sev21_120$Fire_Sev_mean_2016_2020, fire_sev21_500$Fire_Sev_mean_2016_2020)
+cor(fire_sev21_120$Fire_Sev_mean_2016_2020, fire_sev21_1200$Fire_Sev_mean_2016_2020)
+cor(fire_sev21_500$Fire_Sev_mean_2016_2020, fire_sev21_1200$Fire_Sev_mean_2016_2020)
+
+cor(fire_sev21_120$Fire_Sev_mean_2011_2015, fire_sev21_500$Fire_Sev_mean_2011_2015)
+cor(fire_sev21_120$Fire_Sev_mean_2011_2015, fire_sev21_1200$Fire_Sev_mean_2011_2015)
+cor(fire_sev21_500$Fire_Sev_mean_2011_2015, fire_sev21_1200$Fire_Sev_mean_2011_2015)
+
+cor(fire_sev21_120$Fire_Sev_mean_1986_2010, fire_sev21_500$Fire_Sev_mean_1986_2010)
+cor(fire_sev21_120$Fire_Sev_mean_1986_2010, fire_sev21_1200$Fire_Sev_mean_1986_2010)
+cor(fire_sev21_500$Fire_Sev_mean_1986_2010, fire_sev21_1200$Fire_Sev_mean_1986_2010)
+
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##
+## Subsection: Fire trends
+##
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+fire_ras <- rast("C:/Users/srk252/Documents/GIS_Data/CBI_Sierra/CBI_1985_2024_ZeroFilling_Stack.tif")
+#fire_ras <- fire_ras[[!names(fire_ras) %in% c("2022", "2023")]]
+
+## Get the frequency table
+freq_table <- freq(fire_ras, bylayer = TRUE)
+
+## Cell area (30mx30m)
+cell_area <- prod(res(fire_ras))
+
+## Area calculation
+## Total count * area
+freq_table$Area <- freq_table$count * cell_area
+
+## Figure to illustrate the change in total area burned and burned
+## across frequency classes
+fire_freq <- freq_table |> 
+  filter(value != 0) |>
+  mutate(Year = rep(1985:2023, each = 3)) |> 
+  mutate(value = case_when(value == 1 ~ "Low",
+                           value == 2 ~ "Moderate",
+                           value == 3 ~ "High")) |> 
+  mutate(value = factor(value, levels = c("Low",
+                                             "Moderate",
+                                             "High"))) |> 
+  mutate(Year = as.factor(Year)) |> 
+  mutate(AreaKm = Area/1000) 
+
+fire_year_plot <- ggplot(data = fire_freq) + 
+  geom_segment(aes(x = Year,
+                   y = 0, yend = AreaKm,
+                   color = value)) +
+  geom_point(aes(x = Year, y = AreaKm, 
+                 color = value),
+             size = 2) +
+  geom_smooth(aes(x = Year, y = AreaKm, group = value, color = value, fill = value)) + 
+  scale_color_brewer(type = "qual", palette = "Dark2") +
+  scale_fill_brewer(type = "qual", palette = "Dark2") +
+  theme_bw() +
+  theme(axis.text = element_text(angle = 90, vjust = 0)) +
+  scale_y_continuous(expand = c(0, 0)) + 
+  xlab("Year") + 
+  ylab(expression("Burned Area ln(KM"^2*")"))
+
+
+fire_loglin <- lm(log(AreaKm) ~ value + as.numeric(Year), data = fire_freq)
+fire_lin <- lm(AreaKm ~ value + as.numeric(Year), data = fire_freq)
+summary(fire_loglin)
+(exp(fire_loglin$coefficients[4]) - 1) * 100  # Percentage change
+
+plot(fire_loglin, which = 3)
+plot(fire_lin, which = 3)
+
+library(ggeffects)
+
+# Get predicted values
+model_pred <- ggpredict(fire_loglin, terms = c("Year", "value"))
+
+# Plot with back-transformed values
+ggplot(model_pred, aes(x = x, y = predicted, color = group)) +
+  geom_line(linetype = "dashed") +
+  geom_ribbon(aes(ymin = conf.low, 
+                  ymax = conf.high, 
+                  fill = group), alpha = 0.1) +
+  labs(x = "Year",
+       y = expression("Area (km"^2*")"),
+       color = "Severity",
+       fill = "Severity") +
+  theme_bw()
+
+# With raw data
+ggplot(model_pred, aes(x = x, y = predicted, color = group)) +
+  geom_point(data = fire_freq, aes(x = Year, y = AreaKm, color = value), alpha = 0.3) +
+  geom_line() +
+  geom_ribbon(aes(ymin = conf.low, 
+                  ymax = conf.high, 
+                  fill = group), alpha = 0.1) +
+  labs(x = "Year",
+       y = expression("Area (km"^2*")"),
+       color = "Severity",
+       fill = "Severity") +
+  theme_bw()
 # ## -------------------------------------------------------------
 # ##
 # ## Begin Section: For Luca
