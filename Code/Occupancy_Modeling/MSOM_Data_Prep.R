@@ -41,7 +41,7 @@ library(lubridate)
 ## -------------------------------------------------------------
 
 ## Load in the bird data for 2021
-load(here("./Data/Generated_DFs/Occ_Mod_Data/95_Thresh_Cutoff/2021_OccSppList.RData"))
+#load(here("./Data/Generated_DFs/Occ_Mod_Data/95_Thresh_Cutoff/2021_OccSppList.RData"))
 load(here("./Data/Generated_DFs/Occ_Mod_Data/Thresh_By_Species/2021_99Conf_OccSppList.RData"))
 
 
@@ -205,7 +205,7 @@ hist(C, breaks = 30, main = "Naive Species Richness")
 ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # Double check the different cutoffs for each species
 print(y)
-sp.ind <- which(dimnames(y)[[3]] == "Lawrence's Goldfinch")
+sp.ind <- which(dimnames(y)[[3]] == "Olive-sided Flycatcher")
 
 test <- y[,,sp.ind]
 test <- apply(test, 1, function(x) max(x, na.rm = T))
@@ -228,19 +228,47 @@ mapview::mapview(aru_sf, zcol = "Det")
 ## -------------------------------------------------------------
 
 ## Morphological Characteristics
-morph <- read.csv("Data/SierraBirds_Mass_Beak_PCA.csv")
+morph <- read.csv("Data/SierraBirds_Mass_Beak_PCA.csv") |> 
+  select(-X)
+
+## Joined species
+sapsucker <- morph |> 
+  filter(Com_Name %in% c("Williamson's Sapsucker", "Red-breasted Sapsucker", "Red-naped Sapsucker")) |> 
+  summarise(across(c(Mass, starts_with("Beak_"), PCA1, PCA2), mean)) %>%
+  mutate(
+    Scientific = "Sphyrapicus spp.",
+    Com_Name = "Sphyrapicus spp.",
+    Species_Code = "sapspp"
+  ) |> 
+  select(names(morph))
+
+## Vireo
+vireo <- morph |> 
+  filter(Com_Name %in% c("Cassin's Vireo", "Plumbeous Vireo")) |> 
+  summarise(across(c(Mass, starts_with("Beak_"), PCA1, PCA2), mean)) %>%
+  mutate(
+    Scientific = "Vireo spp.",
+    Com_Name = "Vireo spp.",
+    Species_Code = "virspp"
+  ) |> 
+  select(names(morph))
+
+## Bind back
+morph <- bind_rows(morph, vireo, sapsucker)
+
 morph <- morph |> 
   filter(Com_Name %in% sp.names[[3]]) |> 
   arrange(match(Com_Name, sp.names[[3]]))
 
 bm <- morph$Mass
+bmlog <- log(morph$Mass)
 blc <- morph$Beak_Length_Culmen
 bd <- morph$Beak_Depth
 pc1 <- morph$PCA1
 pc2 <- morph$PCA2
 
 ## Get the number of hours per survey for the detection covariate
-eff.dat <- read.csv(here("./Data/Generated_DFs/Occ_Mod_Data/95_Thresh_Cutoff/2021_OccEffortFileSubset.csv")) #clean
+#eff.dat <- read.csv(here("./Data/Generated_DFs/Occ_Mod_Data/95_Thresh_Cutoff/2021_OccEffortFileSubset.csv")) #clean
 eff.dat <- read.csv(here("./Data/Generated_DFs/Occ_Mod_Data/Thresh_By_Species/2021_99Conf_OccEffortFileSubset.csv"))
 eff.dat <- eff.dat[,-1]
 colnames(eff.dat) <- gsub("[[:punct:]]", "_", gsub("X", "", colnames(eff.dat)))
@@ -286,8 +314,8 @@ print(y)
 ## Subsection: "Ragged array" data input for skipping NAs
 ##
 ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-ragged <- FALSE
-spOcc <- TRUE
+ragged <- TRUE
+spOcc <- FALSE
 ## *************************************************************
 ##
 ## Section Notes:
@@ -300,94 +328,94 @@ spOcc <- TRUE
 ##
 ## *************************************************************
 if(ragged){
-## One slice of the species matrix
-y_sub <- y[,,1]
-
-## Find the indices with NAs
-has_data <- which(
-  !is.na(y_sub),
-  arr.ind = T
-)
-
-## Make the covariates into long format
-obs_cov_long <- matrix(
-  NA,
-  nrow(has_data),
-  ncol = 3
-)
-
-## Place the correct data into the new long format
-eff.hrs <- as.matrix(eff.hrs)
-eff.days <- as.matrix(eff.days)
-eff.jday <- as.matrix(eff.jday)
-
-## Make these in long format
-for(i in 1:nrow(has_data)){
-  obs_cov_long[i,1] <- eff.hrs[
-    has_data[i,1], # site
-    #1,
-    has_data[i,2] # rep
-  ]
+  ## One slice of the species matrix
+  y_sub <- y[,,1]
   
-  obs_cov_long[i,2] <- eff.days[
-    has_data[i,1], # site
-    #1,
-    has_data[i,2] # rep
-  ]
+  ## Find the indices with NAs
+  has_data <- which(
+    !is.na(y_sub),
+    arr.ind = T
+  )
   
-  obs_cov_long[i,3] <- eff.jday[
-    has_data[i,1], # site
-    #1,
-    has_data[i,2] # rep
-  ]
+  ## Make the covariates into long format
+  obs_cov_long <- matrix(
+    NA,
+    nrow(has_data),
+    ncol = 3
+  )
   
-}
-
-head(obs_cov_long)
-
-## Using body mass as a detection covariate
-
-
-
-## Scale the detection covariates
-eff.hrs <- obs_cov_long[,1]
-mean.eff.hrs <- mean(eff.hrs)
-sd.eff.hrs <- sd(eff.hrs)
-eff.hrs.scale <- (eff.hrs - mean.eff.hrs) / sd.eff.hrs
-
-eff.days <- obs_cov_long[,2]
-mean.eff.days <- mean(eff.days)
-sd.eff.days <- sd(eff.days)
-eff.days.scale <- (eff.days - mean.eff.days) / sd.eff.days
-
-eff.jday <- obs_cov_long[,3]
-mean.eff.jday <- mean(eff.jday)
-sd.eff.jday <- sd(eff.jday)
-eff.jday.scale <- (eff.jday - mean.eff.jday) / sd.eff.jday
-
-## Species-level traits
-mean.bm <- mean(log(bm))
-sd.bm <- sd(log(bm))
-bm.scale <- (log(bm) - mean.bm) / sd.bm
-
-# {
-# eff.hrs <- scale(eff.hrs)
-# attr(eff.hrs, "scaled:center") <- NULL
-# attr(eff.hrs, "scaled:scale") <- NULL
-# 
-# eff.days <- scale(eff.days)
-# attr(eff.days, "scaled:center") <- NULL
-# attr(eff.days, "scaled:scale") <- NULL
-# }
-#eff.jday <- as.matrix(scale(unlist(eff.))
-
-## Make the response variable in long format
-y_long <- matrix(data = NA, nrow = length(y_sub[!is.na(y_sub)]), ncol = dim(y)[3])
-for(i in 1:dim(y)[3]){
-  y.tmp <- y[,,i]
-  y_long[,i] <- y.tmp[!is.na(y.tmp)]
-}
-
+  ## Place the correct data into the new long format
+  eff.hrs <- as.matrix(eff.hrs)
+  eff.days <- as.matrix(eff.days)
+  eff.jday <- as.matrix(eff.jday)
+  
+  ## Make these in long format
+  for(i in 1:nrow(has_data)){
+    obs_cov_long[i,1] <- eff.hrs[
+      has_data[i,1], # site
+      #1,
+      has_data[i,2] # rep
+    ]
+    
+    obs_cov_long[i,2] <- eff.days[
+      has_data[i,1], # site
+      #1,
+      has_data[i,2] # rep
+    ]
+    
+    obs_cov_long[i,3] <- eff.jday[
+      has_data[i,1], # site
+      #1,
+      has_data[i,2] # rep
+    ]
+    
+  }
+  
+  head(obs_cov_long)
+  
+  ## Using body mass as a detection covariate
+  
+  
+  
+  ## Scale the detection covariates
+  eff.hrs <- obs_cov_long[,1]
+  mean.eff.hrs <- mean(eff.hrs)
+  sd.eff.hrs <- sd(eff.hrs)
+  eff.hrs.scale <- (eff.hrs - mean.eff.hrs) / sd.eff.hrs
+  
+  eff.days <- obs_cov_long[,2]
+  mean.eff.days <- mean(eff.days)
+  sd.eff.days <- sd(eff.days)
+  eff.days.scale <- (eff.days - mean.eff.days) / sd.eff.days
+  
+  eff.jday <- obs_cov_long[,3]
+  mean.eff.jday <- mean(eff.jday)
+  sd.eff.jday <- sd(eff.jday)
+  eff.jday.scale <- (eff.jday - mean.eff.jday) / sd.eff.jday
+  
+  ## Species-level traits
+  mean.bm <- mean(log(bm))
+  sd.bm <- sd(log(bm))
+  bm.scale <- (log(bm) - mean.bm) / sd.bm
+  
+  # {
+  # eff.hrs <- scale(eff.hrs)
+  # attr(eff.hrs, "scaled:center") <- NULL
+  # attr(eff.hrs, "scaled:scale") <- NULL
+  # 
+  # eff.days <- scale(eff.days)
+  # attr(eff.days, "scaled:center") <- NULL
+  # attr(eff.days, "scaled:scale") <- NULL
+  # }
+  #eff.jday <- as.matrix(scale(unlist(eff.))
+  
+  ## Make the response variable in long format
+  y_long <- matrix(data = NA, nrow = length(y_sub[!is.na(y_sub)]), ncol = dim(y)[3])
+  for(i in 1:dim(y)[3]){
+    y.tmp <- y[,,i]
+    y_long[,i] <- y.tmp[!is.na(y.tmp)]
+  }
+  
 } #if ragged
 ## -------------------------------------------------------------
 ##
@@ -396,7 +424,7 @@ for(i in 1:dim(y)[3]){
 ## -------------------------------------------------------------
 
 ## Right now lets pull in the ARU meta data
-aru_meta <- readr::read_csv(here("Data/ARU_120m.csv")) #clean
+#aru_meta <- readr::read_csv(here("Data/ARU_120m.csv")) #clean
 aru_meta <- readr::read_csv(here("Data/ARU_120m_New.csv"))
 aru_meta$Cell_Unit <- paste0(aru_meta$cell_id, "_", aru_meta$unit_numbe)
 names(aru_meta)
@@ -417,14 +445,17 @@ aru_meta <- aru_meta |> select(Cell_Unit,
                                topo_tpi,
                                tmx_bcm_mn, 
                                ppt_bcm_mn,
-                               fire1yr_cbi_mn, 
-                               fire2_5yr_cbi_mn,
+                               #fire1yr_cbi_mn, 
+                               #fire2_5yr_cbi_mn,
+                               fire1_5yr_cbi_mn = fire5yr_cbi_mn, #correct column for 1-5 year fire
                                fire6_10yr_cbi_mn, 
                                fire11_35yr_cbi_mn,
-                               fire1yr_high_prop, 
-                               fire1yr_lowmod_prop,
-                               fire2_5yr_high_prop, 
-                               fire2_5yr_lowmod_prop,
+                               #fire1yr_high_prop, 
+                               #fire1yr_lowmod_prop,
+                               fire1_5yr_high_prop = fire5yr_high_prop, #correct column for 1-5 year fire
+                               fire1_5yr_lowmod_prop = fire5yr_lowmod_prop,
+                               #fire2_5yr_high_prop, 
+                               #fire2_5yr_lowmod_prop,
                                fire6_10yr_high_prop, 
                                fire6_10yr_lowmod_prop,
                                fire11_35yr_high_prop, 
@@ -437,10 +468,10 @@ aru_meta <- aru_meta |> select(Cell_Unit,
                                cc_cfo_sd
                                ) |> 
   filter(Cell_Unit %in% cu.map$Cell_Unit) |> 
-  arrange(match(Cell_Unit, cu.map$Cell_Unit)) |>
-  mutate(fire1_5yr_cbi_mn = (fire1yr_cbi_mn + fire2_5yr_cbi_mn)/2,
-         fire1_5yr_high_prop = (fire1yr_high_prop + fire2_5yr_high_prop)/2,
-         fire1_5yr_lowmod_prop = (fire1yr_lowmod_prop + fire2_5yr_lowmod_prop)/2)
+  arrange(match(Cell_Unit, cu.map$Cell_Unit)) #|>
+  # mutate(fire1_5yr_cbi_mn = (fire1yr_cbi_mn + fire2_5yr_cbi_mn)/2,
+  #        fire1_5yr_high_prop = (fire1yr_high_prop + fire2_5yr_high_prop)/2,
+  #        fire1_5yr_lowmod_prop = (fire1yr_lowmod_prop + fire2_5yr_lowmod_prop)/2)
 
 aru_cor <- cor(aru_meta |> select(topo_elev,
                                   ppt_bcm_mn,
@@ -483,21 +514,21 @@ ppt <- as.vector(scale(aru_meta$ppt_bcm_mn))
 tmx <- as.vector(scale(aru_meta$tmx_bcm_mn))
 
 ## Original CBI mean data
-cbi1 <- as.vector(scale(aru_meta$fire1yr_cbi_mn))
+#cbi1 <- as.vector(scale(aru_meta$fire1yr_cbi_mn))
 cbi1_5 <- as.vector(scale(aru_meta$fire1_5yr_cbi_mn))
-cbi2_5 <- as.vector(scale(aru_meta$fire2_5yr_cbi_mn))
+#cbi2_5 <- as.vector(scale(aru_meta$fire2_5yr_cbi_mn))
 cbi6_10 <- as.vector(scale(aru_meta$fire6_10yr_cbi_mn))
 cbi11_35 <- as.vector(scale(aru_meta$fire11_35yr_cbi_mn))
 
 ## Adding in the proportional fire data
-hsf_prop1 <- as.vector(scale(aru_meta$fire1yr_high_prop))
+#hsf_prop1 <- as.vector(scale(aru_meta$fire1yr_high_prop))
 hsf_prop1_5 <- as.vector(scale(aru_meta$fire1_5yr_high_prop))
-hsf_prop2_5 <- as.vector(scale(aru_meta$fire2_5yr_high_prop))
+#hsf_prop2_5 <- as.vector(scale(aru_meta$fire2_5yr_high_prop))
 hsf_prop6_10 <- as.vector(scale(aru_meta$fire6_10yr_high_prop))
 hsf_prop11_35 <- as.vector(scale(aru_meta$fire11_35yr_high_prop))
-lmsf_prop1 <- as.vector(scale(aru_meta$fire1yr_lowmod_prop))
+#lmsf_prop1 <- as.vector(scale(aru_meta$fire1yr_lowmod_prop))
 lmsf_prop1_5 <- as.vector(scale(aru_meta$fire1_5yr_lowmod_prop))
-lmsf_prop2_5 <- as.vector(scale(aru_meta$fire2_5yr_lowmod_prop))
+#lmsf_prop2_5 <- as.vector(scale(aru_meta$fire2_5yr_lowmod_prop))
 lmsf_prop6_10 <- as.vector(scale(aru_meta$fire6_10yr_lowmod_prop))
 lmsf_prop11_35 <- as.vector(scale(aru_meta$fire11_35yr_lowmod_prop))
 
@@ -517,54 +548,54 @@ ch_cfo_sd <- as.vector(scale(aru_meta$ch_cfo_sd))
 ##
 ## -------------------------------------------------------------
 if(ragged){
-dimnames(y) <- NULL
-# win.data <- list(y = y, 
-#              nsite = dim(y)[1],
-#              nrep = dim(y)[2],
-#              nspec = dim(y)[3],
-#              eff.days = eff.days,
-#              eff.hrs = eff.hrs,
-#              utmn = utmn,
-#              ele = ele,
-#              ppt = ppt,
-#              tmx = tmx,
-#              cbi1 = cbi1,
-#              cbi2_5 = cbi2_5,
-#              cbi6_10 = cbi6_10,
-#              cbi11_35 = cbi11_35,
-#              stage = stage,
-#              cc = cc
-#              )
-# str(win.data)
-
-## Win data new
-win.data.rag <- list(y = y_long,
-                     nsite = dim(y)[1],
-                     N = nrow(y_long),
-                     nspec = ncol(y_long),
-                     site_id = has_data[,1],
-                     eff.hrs = eff.hrs.scale,
-                     eff.jday = eff.jday.scale,
-                     #bmass = bm.scale,
-                     #beak.pc1 = pc1,
-                     #beak.pc2 = pc2,
-                     utmn = utmn,
-                     lat = Lat,
-                     ele = ele,
-                     ppt = ppt,
-                     tmx = tmx,
-                     cbi1 = cbi1,
-                     cbi1_5 = cbi1_5,
-                     cbi2_5 = cbi2_5,
-                     cbi6_10 = cbi6_10,
-                     cbi11_35 = cbi11_35,
-                     stage = stage,
-                     cc_f3 = cc_f3,
-                     cc_cfo = cc_cfo,
-                     ch_cfo = ch_cfo,
-                     ch_res = ch_res
-                     )
-str(win.data.rag)
+  dimnames(y) <- NULL
+  # win.data <- list(y = y, 
+  #              nsite = dim(y)[1],
+  #              nrep = dim(y)[2],
+  #              nspec = dim(y)[3],
+  #              eff.days = eff.days,
+  #              eff.hrs = eff.hrs,
+  #              utmn = utmn,
+  #              ele = ele,
+  #              ppt = ppt,
+  #              tmx = tmx,
+  #              cbi1 = cbi1,
+  #              cbi2_5 = cbi2_5,
+  #              cbi6_10 = cbi6_10,
+  #              cbi11_35 = cbi11_35,
+  #              stage = stage,
+  #              cc = cc
+  #              )
+  # str(win.data)
+  
+  ## Win data new
+  win.data.rag <- list(y = y_long,
+                       nsite = dim(y)[1],
+                       N = nrow(y_long),
+                       nspec = ncol(y_long),
+                       site_id = has_data[,1],
+                       eff.hrs = eff.hrs.scale,
+                       eff.jday = eff.jday.scale,
+                       #bmass = bm.scale,
+                       #beak.pc1 = pc1,
+                       #beak.pc2 = pc2,
+                       utmn = utmn,
+                       lat = Lat,
+                       ele = ele,
+                       ppt = ppt,
+                       tmx = tmx,
+                       #cbi1 = cbi1,
+                       cbi1_5 = cbi1_5,
+                       #cbi2_5 = cbi2_5,
+                       cbi6_10 = cbi6_10,
+                       cbi11_35 = cbi11_35,
+                       stage = stage,
+                       cc_f3 = cc_f3,
+                       cc_cfo = cc_cfo,
+                       ch_cfo = ch_cfo,
+                       ch_res = ch_res
+  )
+  str(win.data.rag)
 }
 #                  nrep = dim(y)[2],
 #                  nspec = dim(y)[3],
@@ -631,14 +662,14 @@ if(spOcc){
 ##
 ## -------------------------------------------------------------
 if(ragged){
-to_keep <- c("y", "y_long", "win.data.rag")
-to_remove <- setdiff(ls(), to_keep)
-
-rm(list = to_remove)
-rm(to_remove)
-
-## Save the RDATA
-save.image(file = here("./Data/JAGS_Data/MSOM_Ragged_2021_SpeciesThresh_975minMaxPrex_NewVars.RData"))
+  to_keep <- c("y", "y_long", "win.data.rag")
+  to_remove <- setdiff(ls(), to_keep)
+  
+  rm(list = to_remove)
+  rm(to_remove)
+  
+  ## Save the RDATA
+  save.image(file = here("./Data/JAGS_Data/MSOM_Ragged_2021_SpeciesThresh_975minMaxPrex_NewVars.RData"))
 }
 
 if(spOcc){
