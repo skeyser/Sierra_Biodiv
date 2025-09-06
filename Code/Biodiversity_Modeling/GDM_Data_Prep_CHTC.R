@@ -41,7 +41,7 @@ library(adespatial)
 
 ## Load in the Z-matrices
 load(here("./Data/JAGS_Data/Occ2GDM_Data_SpThresh_975minMaxPrec.Rdata"))
-
+load(here("./Data/SpOccupancy_Data/Occ2GDM_Data_SpThresh_975minMaxPrec_spOcc_2SLF.Rdata"))
 ## Reformat data
 Z <- OccData$Z.posterior
 dimnames(Z) <- list(NULL, OccData$ZcolNames, NULL)
@@ -97,13 +97,13 @@ envTab <- envTab[-missRows, ]
 
 ## Generate two input types
 ## 1. envTab which is the same
-data.table::fwrite(envTab, file = here("./Data/Z_Post_Samples_CHTC/envTab.csv"))
+data.table::fwrite(envTab, file = here("./Data/Z_spOcc_Post_Samples_CHTC/envTab.csv"))
 
 ## 2. 1000 Z matrices
 dim(Z)
 for(i in 1:dim(Z)[3]){
   z.tmp <- Z[,,i]
-  data.table::fwrite(z.tmp, file = paste0(here("./Data/Z_Post_Samples_CHTC/"), "/Z_sample_", i, ".csv"))
+  data.table::fwrite(z.tmp, file = paste0(here("./Data/Z_spOcc_Post_Samples_CHTC/"), "/Z_sample_", i, ".csv"))
 }
 
 ## Generate a quick reference file for the looping with input and output
@@ -111,4 +111,4 @@ ZoutSort <- data.frame(Input = paste0(rep("Z_sample", times = dim(Z)[3]), "_", s
                        Output = paste0(rep("Output_GDM", times = dim(Z)[3]), "_", seq(1, dim(Z)[3]), ".rds"))
 colnames(ZoutSort) <- NULL
 
-fwrite(ZoutSort, file = here("./Data/Z_Post_Samples_CHTC/GDM_Sort.csv"))
+data.table::fwrite(ZoutSort, file = here("./Data/Z_spOcc_Post_Samples_CHTC/GDM_Sort.csv"))
