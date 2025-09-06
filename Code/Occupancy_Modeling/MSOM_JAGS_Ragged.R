@@ -407,6 +407,7 @@ cat("
       # True latent state (Z-matrix)
       z[i,k] ~ dbern(psi[i,k])
       
+      # Old GoF
       # Model Assement via Chi-squared GoF
       evalZ[i,k] <- psi[i,k]
       EZ[i,k] <- pow((z[i,k] - evalZ[i,k]), 2) / (evalZ[i,k] + 0.5)
@@ -414,6 +415,21 @@ cat("
       # Replicated data for new comparison
       z.new[i,k] ~ dbern(psi[i,k])
       EZ.new[i,k] <- pow((z.new[i,k] - evalZ[i,k]), 2) / (evalZ[i,k] + 0.5)
+      
+      ## !! Experimental !! ##
+      # # New binned GoF
+      # # Sum observed detection at the site
+      # y.site[i,k] <- sum(y[site_id == i, k])
+      # 
+      # # Expected sum
+      # E.site[i,k] <- sum(p[site_id == i, k] * z[i,k])
+      # 
+      # # Chi-square for actual and rep
+      # chi.site[i,k] <- pow((y.site[i,k] - E.site[i,k]), 2)/(E.site[i,k] + 0.0001)
+      # 
+      # # Generate replicate data
+      # y.new.site[i,k] <- sum(y.rep[site_id == i, k])
+      # chi.new.site[i,k] <- pow((y.new.site[i,k] - E.site[i,k]), 2) / (E.site[i,k] + 0.0001)
       
       }
     }
@@ -467,6 +483,8 @@ cat("
     fitZ.new <- sum(EZ.new[,])
     fitY <- sum(E[,])
     fitY.new <- sum(E.new[,])
+    fitBin <- sum(chi.site[,])
+    fitBin.new <- sum(chi.new.site[,])
     
     }
     ", fill = TRUE)

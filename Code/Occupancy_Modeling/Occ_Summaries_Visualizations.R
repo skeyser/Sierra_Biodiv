@@ -63,6 +63,16 @@ summary(out2)
 pp.check(out2, observed = 'fitY', simulated = 'fitY.new')
 #pp.check(out2, observed = 'fitZ', simulated = 'fitZ.new')
 
+# First, check what's available in out2
+names(out2$sims.list)
+
+# And in out3
+names(out3)
+
+# We can also look at the structure
+str(out2)
+str(out3)
+
 ## -------------------------------------------------------------
 ##
 ## End Section: Posterior Predictive Checks

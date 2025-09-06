@@ -64,10 +64,10 @@ varImp <- left_join(varImp, pval)
 
 # Clean predictor names (optional)
 varImp$Predictor <- factor(varImp$Predictor,
-                         levels = c("Geographic", "ele", "ppt", "fire1_5yr_cbi_mn", 
-                                    "fire6_10yr_cbi_mn", "fire11_35yr_cbi_mn", "cancov", "ch_res"),
-                         labels = c("Geographic", "Elevation", "Precipitation", "Fire 1-5 yr", 
-                                    "Fire 6-10 yr", "Fire 11-35 yr", "Canopy Cover", "Canopy Height"))
+                           levels = c("Geographic", "ele", "ppt", "fire1_5yr_cbi_mn", 
+                                      "fire6_10yr_cbi_mn", "fire11_35yr_cbi_mn", "cancov", "ch_res"),
+                           labels = c("Geographic", "Elevation", "Precipitation", "Fire 1-5 yr", 
+                                      "Fire 6-10 yr", "Fire 11-35 yr", "Canopy Cover", "Canopy Height"))
 
 # Add significance stars
 varImp$sig <- ifelse(varImp$pval < 0.05, "*", "")
@@ -154,13 +154,13 @@ summary_stats$Predictor <- factor(summary_stats$Predictor,
 summary_stats$sig <- ifelse(summary_stats$sig_prop > 0.95, "*", "") 
 
 summary_stats <- summary_stats |> mutate(PredPretty = case_when(Predictor == "ele" ~ "Elevation",
-                                   Predictor == "cancov" ~ "Canopy Cover",
-                                   Predictor == "ch_res" ~ "Canopy Height Res.",
-                                   Predictor == "Geographic" ~ "Geog. Dist.",
-                                   Predictor == "ppt" ~ "Precipitation",
-                                   Predictor == "fire1_5yr_cbi_mn" ~ "Fire Severity: 1-5yr",
-                                   Predictor == "fire6_10yr_cbi_mn" ~ "Fire Severity: 6-10yr",
-                                   Predictor == "fire11_35yr_cbi_mn" ~ "Fire Severity: 11-35yr"
+                                                                Predictor == "cancov" ~ "Canopy Cover",
+                                                                Predictor == "ch_res" ~ "Canopy Height Res.",
+                                                                Predictor == "Geographic" ~ "Geog. Dist.",
+                                                                Predictor == "ppt" ~ "Precipitation",
+                                                                Predictor == "fire1_5yr_cbi_mn" ~ "Fire Severity: 1-5yr",
+                                                                Predictor == "fire6_10yr_cbi_mn" ~ "Fire Severity: 6-10yr",
+                                                                Predictor == "fire11_35yr_cbi_mn" ~ "Fire Severity: 11-35yr"
 )) |> 
   mutate(Color = case_when(PredPretty %in% c("Elevation", 
                                              "Geog. Dist.",
@@ -181,93 +181,93 @@ summary_stats <- summary_stats |> mutate(PredPretty = case_when(Predictor == "el
 
 ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ##
-## Subsection: Plotting the lollipop plot
+## Subsection: Plotting the lollipop plot for VarImp
 ##
 ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-## Lollipop plot for the VI
-vi_lolli <- ggplot(summary_stats, aes(x = reorder(PredPretty, mean_importance), 
-                          y = mean_importance)) +
-  # Draw segments
-  geom_segment(aes(x = reorder(PredPretty, mean_importance),
-                   xend = reorder(PredPretty, mean_importance),
-                   y = 0, 
-                   yend = mean_importance),
-               color = "gray50",
-               size = 1) +
-  # Draw white background for points to "break" the line
-  geom_point(size = 5, 
-             color = "white",
-             fill = "white") +
-  # Draw actual points
-  geom_point(aes(color = Color,
-                 shape = Model),
-             size = 3) +
-  geom_text(aes(label = sig), 
-            vjust = -0.5,
-            size = 5) +
-  scale_color_identity() +
-  scale_shape_manual(values = c("Total Beta" = 16,  # Filled circle
-                                "Turnover" = 18,      # Open circle
-                                "Nestedness" = 17),   # Open triangle
-                     name = "Component") +
-  coord_flip() +
-  scale_y_continuous(breaks = seq(0, 50, by = 10),
-                     limits = c(0, 50)) +
-  theme_bw() +
-  labs(x = "",
-       y = "Predictor Importance") +
-  theme(axis.text = element_text(size = 12),
-        axis.title = element_text(size = 14),
-        legend.position = "right",
-        panel.spacing = unit(0.75, "lines"),
-        legend.background = element_blank())
-
-
-vi_lolli <- ggplot(summary_stats, aes(x = reorder(PredPretty, mean_importance), 
-                                      y = mean_importance)) +
-  # Draw segments
-  geom_segment(aes(x = reorder(PredPretty, mean_importance),
-                   xend = reorder(PredPretty, mean_importance),
-                   y = 0, 
-                   yend = mean_importance),
-               color = "gray50",
-               size = 1) +
-  # Draw white background for points to "break" the line
-  geom_point(size = 5, 
-             color = "white",
-             fill = "white") +
-  # Draw actual points
-  geom_point(aes(color = Color,
-                 shape = Model),
-             size = 3) +
-  # Add dummy geom_line for legend
-  geom_line(aes(linetype = Model),
-            color = "black",
-            show.legend = TRUE) +
-  geom_text(aes(label = sig), 
-            vjust = -0.5,
-            size = 5) +
-  scale_color_identity() +
-  scale_shape_manual(values = c("Total Beta" = 16,
-                                "Turnover" = 18,
-                                "Nestedness" = 17),
-                     name = "Component") +
-  scale_linetype_manual(values = c("Total Beta" = "solid",
-                                   "Turnover" = "dashed",
-                                   "Nestedness" = "dotted"),
-                        name = "Component") +
-  guides(shape = guide_legend(override.aes = list(color = "black"))) +
-  coord_flip() +
-  scale_y_continuous(breaks = seq(0, 50, by = 10),
-                     limits = c(0, 50)) +
-  theme_bw() +
-  labs(x = "",
-       y = "Predictor Importance") +
-  theme(axis.text = element_text(size = 12),
-        axis.title = element_text(size = 14),
-        legend.position = "right",
-        panel.spacing = unit(0.75, "lines"),
-        legend.background = element_blank())
+# ## Lollipop plot for the VI
+# vi_lolli <- ggplot(summary_stats, aes(x = reorder(PredPretty, mean_importance), 
+#                           y = mean_importance)) +
+#   # Draw segments
+#   geom_segment(aes(x = reorder(PredPretty, mean_importance),
+#                    xend = reorder(PredPretty, mean_importance),
+#                    y = 0, 
+#                    yend = mean_importance),
+#                color = "gray50",
+#                size = 1) +
+#   # Draw white background for points to "break" the line
+#   geom_point(size = 5, 
+#              color = "white",
+#              fill = "white") +
+#   # Draw actual points
+#   geom_point(aes(color = Color,
+#                  shape = Model),
+#              size = 3) +
+#   geom_text(aes(label = sig), 
+#             vjust = -0.5,
+#             size = 5) +
+#   scale_color_identity() +
+#   scale_shape_manual(values = c("Total Beta" = 16,  # Filled circle
+#                                 "Turnover" = 18,      # Open circle
+#                                 "Nestedness" = 17),   # Open triangle
+#                      name = "Component") +
+#   coord_flip() +
+#   scale_y_continuous(breaks = seq(0, 50, by = 10),
+#                      limits = c(0, 50)) +
+#   theme_bw() +
+#   labs(x = "",
+#        y = "Predictor Importance") +
+#   theme(axis.text = element_text(size = 12),
+#         axis.title = element_text(size = 14),
+#         legend.position = "right",
+#         panel.spacing = unit(0.75, "lines"),
+#         legend.background = element_blank())
+# 
+# 
+# vi_lolli <- ggplot(summary_stats, aes(x = reorder(PredPretty, mean_importance), 
+#                                       y = mean_importance)) +
+#   # Draw segments
+#   geom_segment(aes(x = reorder(PredPretty, mean_importance),
+#                    xend = reorder(PredPretty, mean_importance),
+#                    y = 0, 
+#                    yend = mean_importance),
+#                color = "gray50",
+#                size = 1) +
+#   # Draw white background for points to "break" the line
+#   geom_point(size = 5, 
+#              color = "white",
+#              fill = "white") +
+#   # Draw actual points
+#   geom_point(aes(color = Color,
+#                  shape = Model),
+#              size = 3) +
+#   # Add dummy geom_line for legend
+#   geom_line(aes(linetype = Model),
+#             color = "black",
+#             show.legend = TRUE) +
+#   geom_text(aes(label = sig), 
+#             vjust = -0.5,
+#             size = 5) +
+#   scale_color_identity() +
+#   scale_shape_manual(values = c("Total Beta" = 16,
+#                                 "Turnover" = 18,
+#                                 "Nestedness" = 17),
+#                      name = "Component") +
+#   scale_linetype_manual(values = c("Total Beta" = "solid",
+#                                    "Turnover" = "dashed",
+#                                    "Nestedness" = "dotted"),
+#                         name = "Component") +
+#   guides(shape = guide_legend(override.aes = list(color = "black"))) +
+#   coord_flip() +
+#   scale_y_continuous(breaks = seq(0, 50, by = 10),
+#                      limits = c(0, 50)) +
+#   theme_bw() +
+#   labs(x = "",
+#        y = "Predictor Importance") +
+#   theme(axis.text = element_text(size = 12),
+#         axis.title = element_text(size = 14),
+#         legend.position = "right",
+#         panel.spacing = unit(0.75, "lines"),
+#         legend.background = element_blank())
 
 
 # Create segment data with preserved ordering
@@ -341,6 +341,146 @@ vi_lolli2 <- summary_stats |>
         legend.background = element_blank())
 
 vi_lolli2
+
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##
+## Subsection: VI Lollipop using total spline and perm significance
+##
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+total_spline_df <- function(model.paths) {
+  spline_df <- map_dfr(seq_along(model.paths), function(i){ 
+    message(sprintf("Processing model %d of %d", i, length(model.paths)))
+    path <- model.paths[i]
+    model <- readRDS(path)
+    
+    model |> 
+      rowwise() |> 
+      mutate(
+        spline_data = list({
+          # Get number of predictors and coefficients
+          n_pred <- length(models$predictors)
+          coef_mat <- matrix(models$coefficients, nrow = n_pred, ncol = 3, byrow = TRUE)
+          
+          # Create data frame with predictor names and spline sums
+          data.frame(
+            Pred = models$predictors,
+            spline_sum = rowSums(abs(coef_mat))
+          )
+        })
+      ) |>
+      unnest(spline_data)
+  }, .id = "model_id")
+  
+  # Calculate summary statistics by beta_metric and predictor
+  summary_df <- spline_df %>%
+    group_by(beta_metric, Pred) %>%
+    summarise(
+      mean_spline = mean(spline_sum),
+      lower_ci = quantile(spline_sum, 0.025),
+      upper_ci = quantile(spline_sum, 0.975),
+      .groups = 'drop'
+    )
+  
+  # Add pretty names
+  cov_rename <- data.frame(
+    Pred = c("ele", "cancov", "Geographic", "ch_res", "ppt",
+             "fire1_5yr_cbi_mn", "fire6_10yr_cbi_mn", "fire11_35yr_cbi_mn"), 
+    PredPretty = c("Elevation", "Canopy Cover", "Geog. Dist.", 
+                   "Canopy Height Res.", "Precipitation",
+                   "Fire Severity: 1-5yr", "Fire Severity: 6-10yr", 
+                   "Fire Severity: 11-35yr")
+  )
+  
+  summary_df <- summary_df %>%
+    left_join(cov_rename, by = "Pred")
+  
+  return(summary_df)
+}
+
+total_spline <- total_spline_df(model.paths = gdm.fits)
+glimpse(total_spline)
+gc()
+
+
+# Create segment data with preserved ordering
+# Set the desired order
+plot_order <- rev(c( 
+  "Geog. Dist.",
+  "Elevation",
+  "Precipitation",
+  "Canopy Cover",
+  "Canopy Height Res.",
+  "Fire Severity: 1-5yr",
+  "Fire Severity: 6-10yr",
+  "Fire Severity: 11-35yr"))
+
+spline_lolli <- total_spline |>
+  mutate(Model = factor(case_when(
+    beta_metric == "Brep" ~ "Turnover",
+    beta_metric == "Brich" ~ "Nestedness",
+    beta_metric == "Btotal" ~ "Total Beta"
+  ), levels = c("Total Beta", "Turnover", "Nestedness"))) |> 
+  left_join(summary_stats |> dplyr::select(PredPretty, Model, sig_prop, sig, Color)) |> 
+  mutate(PredPretty = factor(PredPretty, levels = plot_order)) |>  
+  ggplot() +
+  # Draw segments using separate data frame
+  geom_segment(aes(x = PredPretty,  
+                   y = 0, 
+                   yend = mean_spline,
+                   group = Model),
+               color = "gray50",
+               size = 0.7,
+               position = position_dodge(width = 0.5)) +
+  # Draw points using original data
+  geom_point(aes(x = PredPretty,
+                 y = mean_spline,
+                 color = Color,
+                 shape = Model),
+             size = 3,
+             position = position_dodge(width = 0.5)) +
+  # Add dummy geom_line for legend
+  geom_line(aes(x = PredPretty,
+                y = mean_spline,
+                linetype = Model),
+            color = "black",
+            show.legend = TRUE) +
+  geom_hline(yintercept = 0,
+             linetype = "dashed",
+             color = "black",
+             size = 0.5) +
+  geom_text(aes(x = PredPretty,
+                y = mean_spline,
+                label = sig,
+                group = Model), 
+            vjust = 0.7,
+            hjust = -1.5,
+            size = 5,
+            position = position_dodge(width = 0.5)) +
+  scale_color_identity() +
+  scale_shape_manual(values = c("Total Beta" = 16,
+                                "Turnover" = 18,
+                                "Nestedness" = 17),
+                     name = "Component") +
+  scale_linetype_manual(values = c("Total Beta" = "solid",
+                                   "Turnover" = "dashed",
+                                   "Nestedness" = "dotted"),
+                        name = "Component") +
+  guides(shape = guide_legend(override.aes = list(color = "black"))) +
+  coord_flip() +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0, 1)) +
+  theme_bw() +
+  labs(x = "",
+       y = "Effect Size") +
+  theme(axis.text = element_text(size = 12),
+        axis.title = element_text(size = 14),
+        legend.position = "right",
+        panel.spacing = unit(0.75, "lines"),
+        legend.background = element_blank())
+
+spline_lolli
+
+
 ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ##
 ## Subsection: Spline functions
@@ -475,7 +615,7 @@ spline_plot <- function(spline_list){
                                      "Nestedness" = "dotted"),
                           #name = "Component"
                           guide = "none"
-                          ) +
+    ) +
     scale_fill_manual(values = c("Total Beta" = "gray70",
                                  "Turnover" = "gray70",
                                  "Nestedness" = "gray70"),
@@ -495,7 +635,7 @@ spline_plot <- function(spline_list){
           # legend.box = "horizontal",
           # legend.margin = margin(t = 5, b = 5), # Adjusts top and bottom margins
           # legend.spacing.x = unit(0.5, 'cm')
-          ) +
+    ) +
     scale_y_continuous(limits = c(0, 1)) +
     xlab(gsub("Mean ", "", spline_list$plot_name)) +
     ylab("Ecological Distance") +
@@ -536,7 +676,7 @@ AAC
 DEF
 HIJ
 "
-pgrid <- free(vi_lolli2) + 
+pgrid <- free(spline_lolli) + 
   p.geo + 
   p.ele +
   p.ppt +
@@ -552,7 +692,7 @@ pgrid <- free(vi_lolli2) +
         legend.text = element_text(size = 12),  # Adjust text size if needed
         plot.margin = margin(t = 5, r = 15, b = 5, l = 5))
 
-ggsave(filename = here("./Figures/Final/GridLolliVI_GDM_AllSamples_BetaComponents_SpVarThresh_Fig3.jpg"),
+ggsave(filename = here("./Figures/Final/GridLolliSpline_GDM_AllSamples_BetaComponents_SpVarThresh_Fig3.jpg"),
        plot = pgrid, height = 12, width = 12,
        dpi = 800)
 ggsave(filename = here("./Figures/Final/Fig3.jpg"),

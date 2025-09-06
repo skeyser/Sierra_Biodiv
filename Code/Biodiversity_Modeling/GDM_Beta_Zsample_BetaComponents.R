@@ -40,11 +40,17 @@ library(adespatial)
 ## -------------------------------------------------------------
 
 ## Load in the Z-matrices
-#load(here("./Data/JAGS_Data/Occ2GDM_Data_95thresh.Rdata"))
-load(here("./Data/JAGS_Data/Occ2GDM_Data_SpThresh_975minMaxPrec.Rdata"))
+#load(here("./Data/JAGS_Data/Occ2GDM_Data_SpThresh_975minMaxPrec.Rdata"))
+load(here("./Data/SpOccupancy_Data/Occ2GDM_Data_SpThresh_975minMaxPrec_spOcc.Rdata"))
 
 ## Reformat data
 Z <- OccData$Z.posterior
+hist(apply(apply(Z, c(1,3), sum), 1, mean))
+hist(apply(apply(Z, c(1,3), sum), 1, sd))
+hist(apply(apply(Z, c(1,3), sum), 1, function(x) quantile(x, probs = 0.975)) - apply(apply(Z, c(1,3), sum), 1, function(x) quantile(x, probs = 0.025)))
+mean(apply(apply(Z, c(1,3), sum), 1, function(x) quantile(x, probs = 0.975)) - apply(apply(Z, c(1,3), sum), 1, function(x) quantile(x, probs = 0.025)))
+
+
 dimnames(Z) <- list(NULL, OccData$ZcolNames, NULL)
 
 ## Take the environmental data
@@ -121,6 +127,7 @@ envTab$Cell_Unit <- 1:length(unique(envTab$Cell_Unit))
 
 ## Partition the beta diversity based on Jaccard-based Podani metrics
 bpart <- adespatial::beta.div.comp(Z.samp, coef = "J")
+bpart.bas <- adespatial::beta.div.comp(Z.samp, coef = "BJ")
 
 ## Total Beta
 btotal <- as.matrix(bpart$D)

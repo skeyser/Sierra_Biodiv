@@ -205,7 +205,7 @@ hist(C, breaks = 30, main = "Naive Species Richness")
 ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # Double check the different cutoffs for each species
 print(y)
-sp.ind <- which(dimnames(y)[[3]] == "Olive-sided Flycatcher")
+sp.ind <- which(dimnames(y)[[3]] == "Acorn Woodpecker")
 
 test <- y[,,sp.ind]
 test <- apply(test, 1, function(x) max(x, na.rm = T))
@@ -315,7 +315,7 @@ print(y)
 ##
 ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ragged <- TRUE
-spOcc <- FALSE
+spOcc <- TRUE
 ## *************************************************************
 ##
 ## Section Notes:
