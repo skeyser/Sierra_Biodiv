@@ -63,7 +63,7 @@ rownames(Z) <- envTab$Cell_Unit
 envTab$Cell_Unit <- 1:length(unique(envTab$Cell_Unit))
 
 ## Partition the beta diversity based on Jaccard-based Podani metrics
-bpart <- adespatial::beta.div.comp(Z, coef = "BJ")
+bpart <- adespatial::beta.div.comp(Z, coef = "J")
 
 ## Replacement
 brep <- as.matrix(bpart$repl)
@@ -149,7 +149,9 @@ vi.brep <- if(!is.null(gdm.fit.brep)) {
   gdm.varImp(gdmTab.brep,
              predSelect = FALSE,
              geo = T,
-             nPerm = 100,
+             nPerm = 50,
+             sampleSites = 1,
+             sampleSitePairs = 0.2,
              parallel = FALSE)
 } else NULL
 
@@ -157,7 +159,9 @@ vi.brich <- if(!is.null(gdm.fit.brich)) {
   gdm.varImp(gdmTab.brich,
              predSelect = FALSE,
              geo = T,
-             nPerm = 100,
+             nPerm = 50,
+             sampleSites = 1,
+             sampleSitePairs = 0.2,
              parallel = FALSE)
 } else NULL
 
@@ -165,7 +169,9 @@ vi.btotal <- if(!is.null(gdm.fit.btotal)) {
   gdm.varImp(gdmTab.btotal,
              predSelect = FALSE,
              geo = T,
-             nPerm = 100,
+             nPerm = 50,
+             sampleSites = 1,
+             sampleSitePairs = 0.2,
              parallel = FALSE)
 } else NULL
 
