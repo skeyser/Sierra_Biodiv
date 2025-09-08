@@ -40,62 +40,6 @@ library(adespatial)
 
 ## -------------------------------------------------------------
 
-## Load the model fits
-gdm.fits <- list.files(path = "R:/Users/skeyser/Postdoc/GDM_Output/", full.names = TRUE)
-test <- readRDS(gdm.fits[1])
-
-## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-##
-## Subsection: Variable Importance
-##
-## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-str(test)
-VI <- test$varImp[[3]]
-varImp <- VI$`Predictor Importance`
-varImp$Predictor <- rownames(varImp)
-rownames(varImp) <- NULL
-colnames(varImp) <- c("Importance", "Predictor")
-pval <- VI$`Predictor p-values`
-pval$Predictor <- rownames(pval)
-rownames(pval) <- NULL
-colnames(pval) <- c("pval", "Predictor")
-
-varImp <- left_join(varImp, pval)
-
-# Clean predictor names (optional)
-varImp$Predictor <- factor(varImp$Predictor,
-                           levels = c("Geographic", "ele", "ppt", "fire1_5yr_cbi_mn", 
-                                      "fire6_10yr_cbi_mn", "fire11_35yr_cbi_mn", "cancov", "ch_res"),
-                           labels = c("Geographic", "Elevation", "Precipitation", "Fire 1-5 yr", 
-                                      "Fire 6-10 yr", "Fire 11-35 yr", "Canopy Cover", "Canopy Height"))
-
-# Add significance stars
-varImp$sig <- ifelse(varImp$pval < 0.05, "*", "")
-
-# Create lollipop chart with significance stars
-ggplot(varImp, aes(x = reorder(Predictor, Importance), y = Importance)) +
-  geom_segment(aes(x = reorder(Predictor, Importance), 
-                   xend = reorder(Predictor, Importance),
-                   y = 0, 
-                   yend = Importance),
-               color = "grey50") +
-  geom_point(size = 3, color = "steelblue") +
-  geom_text(aes(label = sig), 
-            vjust = -0.5,
-            size = 5) +  # Adjust size as needed
-  coord_flip() +
-  theme_minimal() +
-  labs(x = "",
-       y = "Relative Importance (%)",
-       title = "Variable Importance") +
-  theme(
-    panel.grid.major.y = element_blank(),
-    panel.grid.minor.y = element_blank(),
-    axis.text = element_text(size = 12),
-    axis.title = element_text(size = 14)
-  )
-
-
 # Read and process all files
 gdm.fits <- list.files(path = "R:/Users/skeyser/Postdoc/GDM_Output/", full.names = TRUE)
 
@@ -179,168 +123,6 @@ summary_stats <- summary_stats |> mutate(PredPretty = case_when(Predictor == "el
     Model == "Btotal" ~ "Total Beta"
   ), levels = c("Total Beta", "Turnover", "Nestedness")))
 
-## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-##
-## Subsection: Plotting the lollipop plot for VarImp
-##
-## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-# ## Lollipop plot for the VI
-# vi_lolli <- ggplot(summary_stats, aes(x = reorder(PredPretty, mean_importance), 
-#                           y = mean_importance)) +
-#   # Draw segments
-#   geom_segment(aes(x = reorder(PredPretty, mean_importance),
-#                    xend = reorder(PredPretty, mean_importance),
-#                    y = 0, 
-#                    yend = mean_importance),
-#                color = "gray50",
-#                size = 1) +
-#   # Draw white background for points to "break" the line
-#   geom_point(size = 5, 
-#              color = "white",
-#              fill = "white") +
-#   # Draw actual points
-#   geom_point(aes(color = Color,
-#                  shape = Model),
-#              size = 3) +
-#   geom_text(aes(label = sig), 
-#             vjust = -0.5,
-#             size = 5) +
-#   scale_color_identity() +
-#   scale_shape_manual(values = c("Total Beta" = 16,  # Filled circle
-#                                 "Turnover" = 18,      # Open circle
-#                                 "Nestedness" = 17),   # Open triangle
-#                      name = "Component") +
-#   coord_flip() +
-#   scale_y_continuous(breaks = seq(0, 50, by = 10),
-#                      limits = c(0, 50)) +
-#   theme_bw() +
-#   labs(x = "",
-#        y = "Predictor Importance") +
-#   theme(axis.text = element_text(size = 12),
-#         axis.title = element_text(size = 14),
-#         legend.position = "right",
-#         panel.spacing = unit(0.75, "lines"),
-#         legend.background = element_blank())
-# 
-# 
-# vi_lolli <- ggplot(summary_stats, aes(x = reorder(PredPretty, mean_importance), 
-#                                       y = mean_importance)) +
-#   # Draw segments
-#   geom_segment(aes(x = reorder(PredPretty, mean_importance),
-#                    xend = reorder(PredPretty, mean_importance),
-#                    y = 0, 
-#                    yend = mean_importance),
-#                color = "gray50",
-#                size = 1) +
-#   # Draw white background for points to "break" the line
-#   geom_point(size = 5, 
-#              color = "white",
-#              fill = "white") +
-#   # Draw actual points
-#   geom_point(aes(color = Color,
-#                  shape = Model),
-#              size = 3) +
-#   # Add dummy geom_line for legend
-#   geom_line(aes(linetype = Model),
-#             color = "black",
-#             show.legend = TRUE) +
-#   geom_text(aes(label = sig), 
-#             vjust = -0.5,
-#             size = 5) +
-#   scale_color_identity() +
-#   scale_shape_manual(values = c("Total Beta" = 16,
-#                                 "Turnover" = 18,
-#                                 "Nestedness" = 17),
-#                      name = "Component") +
-#   scale_linetype_manual(values = c("Total Beta" = "solid",
-#                                    "Turnover" = "dashed",
-#                                    "Nestedness" = "dotted"),
-#                         name = "Component") +
-#   guides(shape = guide_legend(override.aes = list(color = "black"))) +
-#   coord_flip() +
-#   scale_y_continuous(breaks = seq(0, 50, by = 10),
-#                      limits = c(0, 50)) +
-#   theme_bw() +
-#   labs(x = "",
-#        y = "Predictor Importance") +
-#   theme(axis.text = element_text(size = 12),
-#         axis.title = element_text(size = 14),
-#         legend.position = "right",
-#         panel.spacing = unit(0.75, "lines"),
-#         legend.background = element_blank())
-
-
-# Create segment data with preserved ordering
-# Set the desired order
-plot_order <- rev(c( 
-  "Geog. Dist.",
-  "Elevation",
-  "Precipitation",
-  "Canopy Cover",
-  "Canopy Height Res.",
-  "Fire Severity: 1-5yr",
-  "Fire Severity: 6-10yr",
-  "Fire Severity: 11-35yr"))
-
-vi_lolli2 <- summary_stats |> 
-  mutate(PredPretty = factor(PredPretty, levels = plot_order)) |>  
-  ggplot() +
-  # Draw segments using separate data frame
-  geom_segment(aes(x = PredPretty,  
-                   y = 0, 
-                   yend = mean_importance,
-                   group = Model),
-               color = "gray50",
-               size = 0.7,
-               position = position_dodge(width = 0.5)) +
-  # Draw points using original data
-  geom_point(aes(x = PredPretty,
-                 y = mean_importance,
-                 color = Color,
-                 shape = Model),
-             size = 3,
-             position = position_dodge(width = 0.5)) +
-  # Add dummy geom_line for legend
-  geom_line(aes(x = PredPretty,
-                y = mean_importance,
-                linetype = Model),
-            color = "black",
-            show.legend = TRUE) +
-  geom_hline(yintercept = 0,
-             linetype = "dashed",
-             color = "black",
-             size = 0.5) +
-  geom_text(aes(x = PredPretty,
-                y = mean_importance,
-                label = sig,
-                group = Model), 
-            vjust = 0.7,
-            hjust = -1.5,
-            size = 5,
-            position = position_dodge(width = 0.5)) +
-  scale_color_identity() +
-  scale_shape_manual(values = c("Total Beta" = 16,
-                                "Turnover" = 18,
-                                "Nestedness" = 17),
-                     name = "Component") +
-  scale_linetype_manual(values = c("Total Beta" = "solid",
-                                   "Turnover" = "dashed",
-                                   "Nestedness" = "dotted"),
-                        name = "Component") +
-  guides(shape = guide_legend(override.aes = list(color = "black"))) +
-  coord_flip() +
-  scale_y_continuous(breaks = seq(0, 50, by = 10),
-                     limits = c(0, 50)) +
-  theme_bw() +
-  labs(x = "",
-       y = "Predictor Importance") +
-  theme(axis.text = element_text(size = 12),
-        axis.title = element_text(size = 14),
-        legend.position = "right",
-        panel.spacing = unit(0.75, "lines"),
-        legend.background = element_blank())
-
-vi_lolli2
 
 ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ##
@@ -598,11 +380,6 @@ spline_plot <- function(spline_list){
     ), levels = c("Total Beta", "Turnover", "Nestedness")))
   
   splot <- ggplot() +
-    # Individual splines
-    # geom_line(data = spline_df, 
-    #           aes(x = x, y = y, group = model),
-    #           color = color, 
-    #           alpha = 0.5) +
     # Mean spline
     geom_line(data = mean_spline,
               aes(x = x, 
@@ -631,10 +408,6 @@ spline_plot <- function(spline_list){
     theme(axis.title = element_text(family = "sans", size = 14),
           axis.text = element_text(family = "sans", size = 12),
           legend.position = "none"
-          # legend.direction = "horizontal",
-          # legend.box = "horizontal",
-          # legend.margin = margin(t = 5, b = 5), # Adjusts top and bottom margins
-          # legend.spacing.x = unit(0.5, 'cm')
     ) +
     scale_y_continuous(limits = c(0, 1)) +
     xlab(gsub("Mean ", "", spline_list$plot_name)) +
@@ -692,9 +465,7 @@ pgrid <- free(spline_lolli) +
         legend.text = element_text(size = 12),  # Adjust text size if needed
         plot.margin = margin(t = 5, r = 15, b = 5, l = 5))
 
-ggsave(filename = here("./Figures/Final/GridLolliSpline_GDM_AllSamples_BetaComponents_SpVarThresh_Fig3.jpg"),
-       plot = pgrid, height = 12, width = 12,
-       dpi = 800)
+
 ggsave(filename = here("./Figures/Final/Fig3.jpg"),
        plot = pgrid, height = 12, width = 12,
        dpi = 800)
